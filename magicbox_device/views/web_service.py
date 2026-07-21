@@ -25,6 +25,7 @@ def create_app(controller: PlaybackController) -> web.Application:
     app[_CONTROLLER_KEY] = controller
 
     app.router.add_get("/movies", _get_movies)
+    app.router.add_get("/movies/{id}/thumbnail", _get_thumbnail)
     app.router.add_get("/status", _get_status)
     app.router.add_post("/command", _post_command)
     return app
@@ -36,6 +37,19 @@ async def _get_movies(request: web.Request) -> web.Response:
         {"id": movie.id, "title": movie.title, "duration_seconds": movie.duration_seconds}
         for movie in controller.movies
     ])
+
+
+async def _get_thumbnail(request: web.Request) -> web.StreamResponse:
+    controller = request.app[_CONTROLLER_KEY]
+    try:
+        movie_id = int(request.match_info["id"])
+    except ValueError:
+        return web.json_response({"error": "invalid movie id"}, status=400)
+
+    thumbnail_path = controller.library.thumbnail_path_for(movie_id)
+    if thumbnail_path is None:
+        return web.json_response({"error": "no thumbnail for this movie"}, status=404)
+    return web.FileResponse(thumbnail_path)
 
 
 async def _get_status(request: web.Request) -> web.Response:

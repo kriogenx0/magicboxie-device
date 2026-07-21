@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 DEVICE_NAME = os.environ.get("MAGICBOX_DEVICE_NAME", "MagicBox")
 MOVIES_DIR = Path(os.environ.get("MAGICBOX_MOVIES_DIR", "/movies"))
+THUMBNAIL_DIR = Path(os.environ.get("MAGICBOX_THUMBNAIL_DIR", "/var/lib/magicbox/thumbnails"))
 
 # "ble" (default, real device) or "http" (dev/testing - no Bluetooth required,
 # e.g. when there's no BlueZ available such as Docker Desktop on macOS).
@@ -43,7 +44,7 @@ async def _run() -> None:
     if not MOVIES_DIR.is_dir():
         raise SystemExit(f"Movies directory does not exist: {MOVIES_DIR}")
 
-    library = MovieLibrary(MOVIES_DIR)
+    library = MovieLibrary(MOVIES_DIR, thumbnail_dir=THUMBNAIL_DIR)
     library.scan()
 
     player = MpvController(extra_args=_mpv_output_args())

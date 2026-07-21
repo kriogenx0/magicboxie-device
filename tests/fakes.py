@@ -41,8 +41,9 @@ class FakeMpv:
 
 
 class FakeLibrary:
-    def __init__(self):
+    def __init__(self, thumbnail_paths=None):
         self._paths = {0: Path("/movies/a.mp4"), 1: Path("/movies/b.mp4")}
+        self._thumbnail_paths = thumbnail_paths or {}
 
     @property
     def movies(self):
@@ -53,3 +54,6 @@ class FakeLibrary:
 
     def path_for(self, movie_id):
         return self._paths[movie_id]
+
+    def thumbnail_path_for(self, movie_id):
+        return self._thumbnail_paths.get(movie_id)
