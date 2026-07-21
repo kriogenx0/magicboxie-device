@@ -8,10 +8,12 @@ in Docker Desktop on macOS) or no BLE-capable client at hand.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from aiohttp import web
 
 from ..controllers.playback_controller import PlaybackController
+from ..models.library import VIDEO_EXTENSIONS
 from ..models.protocol import Command, Opcode
 
 logger = logging.getLogger(__name__)
@@ -19,12 +21,19 @@ logger = logging.getLogger(__name__)
 _OPCODE_BY_NAME = {opcode.name.lower(): opcode for opcode in Opcode}
 _CONTROLLER_KEY = web.AppKey("controller", PlaybackController)
 
+# Generous but bounded - movie files are large, but this still guards against
+# a truly unbounded upload filling the disk.
+_MAX_UPLOAD_BYTES = 1024 ** 3 * 20  # 20GB
+
+_UPLOAD_CHUNK_BYTES = 1024 * 1024  # 1MB
+
 
 def create_app(controller: PlaybackController) -> web.Application:
-    app = web.Application()
+    app = web.Application(client_max_size=_MAX_UPLOAD_BYTES)
     app[_CONTROLLER_KEY] = controller
 
     app.router.add_get("/movies", _get_movies)
+    app.router.add_post("/movies", _post_movie)
     app.router.add_get("/movies/{id}/thumbnail", _get_thumbnail)
     app.router.add_post("/movies/{id}/thumbnail", _post_thumbnail)
     app.router.add_get("/status", _get_status)
@@ -38,6 +47,55 @@ async def _get_movies(request: web.Request) -> web.Response:
         {"id": movie.id, "title": movie.title, "duration_seconds": movie.duration_seconds}
         for movie in controller.movies
     ])
+
+
+async def _post_movie(request: web.Request) -> web.Response:
+    """Accepts a whole movie file (e.g. shared into the iOS app from Photos/
+    Dropbox/Files) and adds it to the library. Streams the body straight to
+    disk in chunks rather than buffering it all in memory - these are large
+    files and this runs on a Pi. The phone is expected to check GET /movies
+    first and only call this when the title isn't already present; this
+    endpoint itself just rejects an exact filename collision as a safety net.
+    """
+    controller = request.app[_CONTROLLER_KEY]
+    filename = request.headers.get("X-Filename")
+    if not filename or "/" in filename or filename.startswith("."):
+        return web.json_response({"error": "missing or invalid X-Filename header"}, status=400)
+
+    extension = Path(filename).suffix.lower()
+    if extension not in VIDEO_EXTENSIONS:
+        return web.json_response({"error": f"unsupported file extension {extension!r}"}, status=400)
+
+    dest_path = controller.library.root / filename
+    if dest_path.exists():
+        return web.json_response({"error": "a file with this name already exists"}, status=409)
+
+    bytes_written = 0
+    try:
+        with dest_path.open("wb") as f:
+            async for chunk in request.content.iter_chunked(_UPLOAD_CHUNK_BYTES):
+                f.write(chunk)
+                bytes_written += len(chunk)
+    except Exception:
+        dest_path.unlink(missing_ok=True)
+        raise
+
+    if bytes_written == 0:
+        dest_path.unlink(missing_ok=True)
+        return web.json_response({"error": "empty body"}, status=400)
+
+    controller.library.scan()
+    title = Path(filename).stem
+    movie = next((m for m in controller.movies if m.title == title), None)
+    if movie is None:
+        # Scanned but didn't come back with this exact title - still saved,
+        # just report it generically rather than failing the upload outright.
+        return web.json_response({"id": None, "title": title, "duration_seconds": 0}, status=201)
+
+    return web.json_response(
+        {"id": movie.id, "title": movie.title, "duration_seconds": movie.duration_seconds},
+        status=201,
+    )
 
 
 async def _get_thumbnail(request: web.Request) -> web.StreamResponse:

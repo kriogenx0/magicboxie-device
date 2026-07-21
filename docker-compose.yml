@@ -13,7 +13,9 @@ services:
     network_mode: host
     volumes:
       - /var/run/dbus:/var/run/dbus
-      - ${MAGICBOX_MOVIES_DIR:-./movies}:/movies:ro
+      # Writable now (was :ro) - POST /movies (shared-into-the-app uploads
+      # from iOS) needs to write new files into this directory.
+      - ${MAGICBOX_MOVIES_DIR:-./movies}:/movies
       - thumbnails:/var/lib/magicbox/thumbnails
     environment:
       MAGICBOX_DEVICE_NAME: ${MAGICBOX_DEVICE_NAME:-MagicBox}

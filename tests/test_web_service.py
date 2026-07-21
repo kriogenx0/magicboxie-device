@@ -4,6 +4,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from fakes import FakeLibrary, FakeMpv
 
 from magicbox_device.controllers.playback_controller import PlaybackController
+from magicbox_device.models.library import MovieLibrary
 from magicbox_device.views.web_service import create_app
 
 
@@ -149,3 +150,100 @@ def test_post_thumbnail_empty_body_returns_400(tmp_path):
             await client.close()
 
     assert asyncio.run(scenario()) == 400
+
+
+def _real_library(tmp_path):
+    movies_dir = tmp_path / "movies"
+    movies_dir.mkdir()
+    library = MovieLibrary(movies_dir, thumbnail_dir=tmp_path / "thumbnails")
+    library.scan()
+    return library
+
+
+def test_post_movie_uploads_and_appears_in_library(tmp_path):
+    library = _real_library(tmp_path)
+
+    async def scenario():
+        client, _ = await _make_client(library)
+        try:
+            resp = await client.post(
+                "/movies",
+                data=b"fake-video-bytes",
+                headers={"X-Filename": "New Movie.mp4"},
+            )
+            assert resp.status == 201
+            body = await resp.json()
+            assert body["title"] == "New Movie"
+
+            resp = await client.get("/movies")
+            return await resp.json()
+        finally:
+            await client.close()
+
+    movies = asyncio.run(scenario())
+    assert [m["title"] for m in movies] == ["New Movie"]
+    assert (tmp_path / "movies" / "New Movie.mp4").read_bytes() == b"fake-video-bytes"
+
+
+def test_post_movie_missing_filename_header_returns_400(tmp_path):
+    library = _real_library(tmp_path)
+
+    async def scenario():
+        client, _ = await _make_client(library)
+        try:
+            resp = await client.post("/movies", data=b"bytes")
+            return resp.status
+        finally:
+            await client.close()
+
+    assert asyncio.run(scenario()) == 400
+
+
+def test_post_movie_unsupported_extension_returns_400(tmp_path):
+    library = _real_library(tmp_path)
+
+    async def scenario():
+        client, _ = await _make_client(library)
+        try:
+            resp = await client.post(
+                "/movies", data=b"bytes", headers={"X-Filename": "not-a-video.txt"}
+            )
+            return resp.status
+        finally:
+            await client.close()
+
+    assert asyncio.run(scenario()) == 400
+
+
+def test_post_movie_duplicate_filename_returns_409(tmp_path):
+    library = _real_library(tmp_path)
+    (tmp_path / "movies" / "Existing.mp4").write_bytes(b"already-here")
+
+    async def scenario():
+        client, _ = await _make_client(library)
+        try:
+            resp = await client.post(
+                "/movies", data=b"new-bytes", headers={"X-Filename": "Existing.mp4"}
+            )
+            return resp.status
+        finally:
+            await client.close()
+
+    assert asyncio.run(scenario()) == 409
+
+
+def test_post_movie_empty_body_returns_400(tmp_path):
+    library = _real_library(tmp_path)
+
+    async def scenario():
+        client, _ = await _make_client(library)
+        try:
+            resp = await client.post(
+                "/movies", data=b"", headers={"X-Filename": "Empty.mp4"}
+            )
+            return resp.status
+        finally:
+            await client.close()
+
+    assert asyncio.run(scenario()) == 400
+    assert not (tmp_path / "movies" / "Empty.mp4").exists()
