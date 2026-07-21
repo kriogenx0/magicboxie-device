@@ -1,6 +1,8 @@
 services:
   magicbox-device:
-    build: .
+    build:
+      context: .
+      target: base  # the Dockerfile's `test` stage is defined after `base`, so this must be explicit
     restart: unless-stopped
     # BlueZ D-Bus and DRM/KMS video output are host resources - this container
     # is intentionally not isolated from them. `privileged` + `network_mode: host`
