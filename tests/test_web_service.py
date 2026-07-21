@@ -98,3 +98,54 @@ def test_get_thumbnail_invalid_id_returns_400():
             await client.close()
 
     assert asyncio.run(scenario()) == 400
+
+
+def test_post_thumbnail_upload_then_get_returns_uploaded_bytes(tmp_path):
+    async def scenario():
+        client, _ = await _make_client(FakeLibrary(thumbnail_dir=tmp_path))
+        try:
+            resp = await client.post("/movies/0/thumbnail", data=b"official-poster-bytes")
+            assert resp.status == 200
+            resp = await client.get("/movies/0/thumbnail")
+            assert resp.status == 200
+            return await resp.read()
+        finally:
+            await client.close()
+
+    assert asyncio.run(scenario()) == b"official-poster-bytes"
+
+
+def test_post_thumbnail_unknown_movie_returns_404():
+    async def scenario():
+        client, _ = await _make_client()
+        try:
+            resp = await client.post("/movies/99/thumbnail", data=b"bytes")
+            return resp.status
+        finally:
+            await client.close()
+
+    assert asyncio.run(scenario()) == 404
+
+
+def test_post_thumbnail_invalid_id_returns_400():
+    async def scenario():
+        client, _ = await _make_client()
+        try:
+            resp = await client.post("/movies/not-a-number/thumbnail", data=b"bytes")
+            return resp.status
+        finally:
+            await client.close()
+
+    assert asyncio.run(scenario()) == 400
+
+
+def test_post_thumbnail_empty_body_returns_400(tmp_path):
+    async def scenario():
+        client, _ = await _make_client(FakeLibrary(thumbnail_dir=tmp_path))
+        try:
+            resp = await client.post("/movies/0/thumbnail", data=b"")
+            return resp.status
+        finally:
+            await client.close()
+
+    assert asyncio.run(scenario()) == 400

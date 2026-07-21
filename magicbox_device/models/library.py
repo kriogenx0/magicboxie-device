@@ -64,6 +64,15 @@ class MovieLibrary:
     def thumbnail_path_for(self, movie_id: int) -> Optional[Path]:
         return self._thumbnail_paths.get(movie_id)
 
+    def save_uploaded_thumbnail(self, movie_id: int, data: bytes) -> None:
+        """Overwrites the cached thumbnail with a phone-supplied "official" one
+        (e.g. fetched from TMDB), so future requests - from any device - get
+        it instead of the local ffmpeg frame grab."""
+        self._thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        thumbnail_path = self._thumbnail_dir / f"{movie_id}.jpg"
+        thumbnail_path.write_bytes(data)
+        self._thumbnail_paths[movie_id] = thumbnail_path
+
     @staticmethod
     def _probe_duration(path: Path) -> int:
         try:

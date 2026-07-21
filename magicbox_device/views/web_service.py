@@ -26,6 +26,7 @@ def create_app(controller: PlaybackController) -> web.Application:
 
     app.router.add_get("/movies", _get_movies)
     app.router.add_get("/movies/{id}/thumbnail", _get_thumbnail)
+    app.router.add_post("/movies/{id}/thumbnail", _post_thumbnail)
     app.router.add_get("/status", _get_status)
     app.router.add_post("/command", _post_command)
     return app
@@ -50,6 +51,27 @@ async def _get_thumbnail(request: web.Request) -> web.StreamResponse:
     if thumbnail_path is None:
         return web.json_response({"error": "no thumbnail for this movie"}, status=404)
     return web.FileResponse(thumbnail_path)
+
+
+async def _post_thumbnail(request: web.Request) -> web.Response:
+    """Accepts a phone-supplied "official" thumbnail (e.g. from TMDB) and
+    caches it, overwriting the local ffmpeg frame grab, so other devices
+    that connect later get it too without needing their own internet access."""
+    controller = request.app[_CONTROLLER_KEY]
+    try:
+        movie_id = int(request.match_info["id"])
+    except ValueError:
+        return web.json_response({"error": "invalid movie id"}, status=400)
+
+    if not any(movie.id == movie_id for movie in controller.movies):
+        return web.json_response({"error": "unknown movie id"}, status=404)
+
+    data = await request.read()
+    if not data:
+        return web.json_response({"error": "empty body"}, status=400)
+
+    controller.library.save_uploaded_thumbnail(movie_id, data)
+    return web.json_response({"ok": True})
 
 
 async def _get_status(request: web.Request) -> web.Response:

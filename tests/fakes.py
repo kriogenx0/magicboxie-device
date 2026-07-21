@@ -41,9 +41,10 @@ class FakeMpv:
 
 
 class FakeLibrary:
-    def __init__(self, thumbnail_paths=None):
+    def __init__(self, thumbnail_paths=None, thumbnail_dir=None):
         self._paths = {0: Path("/movies/a.mp4"), 1: Path("/movies/b.mp4")}
         self._thumbnail_paths = thumbnail_paths or {}
+        self._thumbnail_dir = thumbnail_dir
 
     @property
     def movies(self):
@@ -57,3 +58,10 @@ class FakeLibrary:
 
     def thumbnail_path_for(self, movie_id):
         return self._thumbnail_paths.get(movie_id)
+
+    def save_uploaded_thumbnail(self, movie_id, data):
+        if self._thumbnail_dir is None:
+            raise RuntimeError("FakeLibrary needs thumbnail_dir to save uploads")
+        path = self._thumbnail_dir / f"{movie_id}.jpg"
+        path.write_bytes(data)
+        self._thumbnail_paths[movie_id] = path
