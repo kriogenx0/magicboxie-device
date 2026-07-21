@@ -1,4 +1,5 @@
-"""Entrypoint: wires the movie library, mpv, and the BLE GATT service together."""
+"""Entrypoint: wires the movie library, mpv, and either the BLE GATT service
+or a plain HTTP web service (dev/testing, no Bluetooth) together."""
 from __future__ import annotations
 
 import asyncio
@@ -8,19 +9,19 @@ import signal
 from pathlib import Path
 from typing import List
 
-from bluez_peripheral.advert import Advertisement
-from bluez_peripheral.agent import NoIoAgent
-from bluez_peripheral.util import Adapter, get_message_bus
-
-from . import protocol
-from .ble_service import MagicBoxService
 from .library import MovieLibrary
 from .player import MpvController
+from .playback_controller import PlaybackController
 
 logger = logging.getLogger(__name__)
 
 DEVICE_NAME = os.environ.get("MAGICBOX_DEVICE_NAME", "MagicBox")
 MOVIES_DIR = Path(os.environ.get("MAGICBOX_MOVIES_DIR", "/movies"))
+
+# "ble" (default, real device) or "http" (dev/testing - no Bluetooth required,
+# e.g. when there's no BlueZ available such as Docker Desktop on macOS).
+TRANSPORT = os.environ.get("MAGICBOX_TRANSPORT", "ble")
+HTTP_PORT = int(os.environ.get("MAGICBOX_HTTP_PORT", "8000"))
 
 # bluez expires an advert after its Timeout elapses; re-registering periodically
 # (well before that) keeps the device discoverable indefinitely.
@@ -48,7 +49,47 @@ async def _run() -> None:
     player = MpvController(extra_args=_mpv_output_args())
     await player.start()
 
-    service = MagicBoxService(library, player)
+    controller = PlaybackController(library, player)
+
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, stop_event.set)
+
+    try:
+        if TRANSPORT == "http":
+            await _run_http(controller, stop_event)
+        else:
+            await _run_ble(controller, stop_event)
+    finally:
+        await player.stop_process()
+
+
+async def _run_http(controller: PlaybackController, stop_event: asyncio.Event) -> None:
+    from aiohttp import web
+
+    from .web_service import create_app
+
+    app = create_app(controller)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", HTTP_PORT)
+    await site.start()
+    logger.info("Serving MagicBox web API on port %d (no Bluetooth)", HTTP_PORT)
+
+    await stop_event.wait()
+    await runner.cleanup()
+
+
+async def _run_ble(controller: PlaybackController, stop_event: asyncio.Event) -> None:
+    from bluez_peripheral.advert import Advertisement
+    from bluez_peripheral.agent import NoIoAgent
+    from bluez_peripheral.util import Adapter, get_message_bus
+
+    from . import protocol
+    from .ble_service import MagicBoxService
+
+    service = MagicBoxService(controller)
 
     bus = await get_message_bus()
     await service.register(bus)
@@ -63,11 +104,6 @@ async def _run() -> None:
 
     service.start_status_polling()
 
-    stop_event = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop_event.set)
-
     try:
         while not stop_event.is_set():
             advert = Advertisement(DEVICE_NAME, [protocol.SERVICE_UUID], 0x0000, ADVERT_TIMEOUT_SECONDS)
@@ -79,7 +115,6 @@ async def _run() -> None:
                 continue
     finally:
         await service.stop_status_polling()
-        await player.stop_process()
 
 
 def run() -> None:

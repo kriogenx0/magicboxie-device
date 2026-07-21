@@ -5,6 +5,7 @@ description = "MagicBox device daemon: BLE GATT control surface driving mpv for 
 requires-python = ">=3.9"
 dependencies = [
     "bluez-peripheral>=0.1.7",
+    "aiohttp>=3.9",
 ]
 
 [project.optional-dependencies]
