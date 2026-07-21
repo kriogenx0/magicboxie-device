@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-from .library import MovieLibrary
-from .player import MpvController
-from .protocol import Command, Movie, Opcode, PlaybackState, PlaybackStatus
+from ..models.library import MovieLibrary
+from ..models.player import MpvController
+from ..models.protocol import Command, Movie, Opcode, PlaybackState, PlaybackStatus
 
 logger = logging.getLogger(__name__)
 

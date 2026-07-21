@@ -11,8 +11,8 @@ import logging
 
 from aiohttp import web
 
-from .playback_controller import PlaybackController
-from .protocol import Command, Opcode
+from ..controllers.playback_controller import PlaybackController
+from ..models.protocol import Command, Opcode
 
 logger = logging.getLogger(__name__)
 

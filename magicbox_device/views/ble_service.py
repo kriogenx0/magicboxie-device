@@ -12,9 +12,9 @@ from bluez_peripheral.gatt.characteristic import CharacteristicFlags as CharFlag
 from bluez_peripheral.gatt.characteristic import characteristic
 from bluez_peripheral.gatt.service import Service
 
-from . import protocol
-from .playback_controller import PlaybackController
-from .protocol import PlaybackState
+from ..controllers.playback_controller import PlaybackController
+from ..models import protocol
+from ..models.protocol import PlaybackState
 
 logger = logging.getLogger(__name__)
 

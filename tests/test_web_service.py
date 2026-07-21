@@ -3,8 +3,8 @@ import asyncio
 from aiohttp.test_utils import TestClient, TestServer
 from fakes import FakeLibrary, FakeMpv
 
-from magicbox_device.playback_controller import PlaybackController
-from magicbox_device.web_service import create_app
+from magicbox_device.controllers.playback_controller import PlaybackController
+from magicbox_device.views.web_service import create_app
 
 
 async def _make_client():

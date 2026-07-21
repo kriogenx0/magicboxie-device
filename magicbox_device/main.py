@@ -9,9 +9,9 @@ import signal
 from pathlib import Path
 from typing import List
 
-from .library import MovieLibrary
-from .player import MpvController
-from .playback_controller import PlaybackController
+from .controllers.playback_controller import PlaybackController
+from .models.library import MovieLibrary
+from .models.player import MpvController
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ async def _run() -> None:
 async def _run_http(controller: PlaybackController, stop_event: asyncio.Event) -> None:
     from aiohttp import web
 
-    from .web_service import create_app
+    from .views.web_service import create_app
 
     app = create_app(controller)
     runner = web.AppRunner(app)
@@ -86,8 +86,8 @@ async def _run_ble(controller: PlaybackController, stop_event: asyncio.Event) ->
     from bluez_peripheral.agent import NoIoAgent
     from bluez_peripheral.util import Adapter, get_message_bus
 
-    from . import protocol
-    from .ble_service import MagicBoxService
+    from .models import protocol
+    from .views.ble_service import MagicBoxService
 
     service = MagicBoxService(controller)
 
