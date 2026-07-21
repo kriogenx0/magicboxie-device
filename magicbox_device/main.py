@@ -1,11 +1,20 @@
-"""Entrypoint: wires the movie library, mpv, and either the BLE GATT service
-or a plain HTTP web service (dev/testing, no Bluetooth) together."""
+"""Entrypoint: wires the movie library, mpv, and the transports together.
+
+Production ("ble") mode runs both the BLE GATT service and the HTTP web
+service concurrently: BLE is what the app uses to discover the device and
+for control, but its tiny ATT payloads are a poor fit for bulk data (movie
+library, thumbnails), so the app reads the device's own HTTP address off a
+BLE characteristic and offers to switch to WiFi for those. "http" mode
+(dev/testing - no Bluetooth required, e.g. no BlueZ on Docker Desktop/macOS)
+runs the HTTP service alone.
+"""
 from __future__ import annotations
 
 import asyncio
 import logging
 import os
 import signal
+import socket
 from pathlib import Path
 from typing import List
 
@@ -38,6 +47,19 @@ def _mpv_output_args() -> List[str]:
     return raw.split()
 
 
+def _local_ip() -> str:
+    """Best-effort LAN IP: opens a UDP "connection" (no packets sent) to a
+    public address just to see which local interface routing would use."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        sock.close()
+
+
 async def _run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -61,7 +83,10 @@ async def _run() -> None:
         if TRANSPORT == "http":
             await _run_http(controller, stop_event)
         else:
-            await _run_ble(controller, stop_event)
+            await asyncio.gather(
+                _run_ble(controller, stop_event),
+                _run_http(controller, stop_event),
+            )
     finally:
         await player.stop_process()
 
@@ -76,7 +101,7 @@ async def _run_http(controller: PlaybackController, stop_event: asyncio.Event) -
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", HTTP_PORT)
     await site.start()
-    logger.info("Serving MagicBox web API on port %d (no Bluetooth)", HTTP_PORT)
+    logger.info("Serving MagicBox web API on port %d", HTTP_PORT)
 
     await stop_event.wait()
     await runner.cleanup()
@@ -90,7 +115,8 @@ async def _run_ble(controller: PlaybackController, stop_event: asyncio.Event) ->
     from .models import protocol
     from .views.ble_service import MagicBoxService
 
-    service = MagicBoxService(controller)
+    network_url = f"http://{_local_ip()}:{HTTP_PORT}"
+    service = MagicBoxService(controller, network_url)
 
     bus = await get_message_bus()
     await service.register(bus)
@@ -109,7 +135,7 @@ async def _run_ble(controller: PlaybackController, stop_event: asyncio.Event) ->
         while not stop_event.is_set():
             advert = Advertisement(DEVICE_NAME, [protocol.SERVICE_UUID], 0x0000, ADVERT_TIMEOUT_SECONDS)
             await advert.register(bus, adapter)
-            logger.info("Advertising as %r", DEVICE_NAME)
+            logger.info("Advertising as %r (WiFi: %s)", DEVICE_NAME, network_url)
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=ADVERT_REFRESH_SECONDS)
             except asyncio.TimeoutError:

@@ -13,6 +13,10 @@ SERVICE_UUID = "3e2c1a00-3b42-4b7e-9c3e-000000000001"
 COMMAND_CHARACTERISTIC_UUID = "3e2c1a00-3b42-4b7e-9c3e-000000000002"
 STATUS_CHARACTERISTIC_UUID = "3e2c1a00-3b42-4b7e-9c3e-000000000003"
 LIBRARY_CHARACTERISTIC_UUID = "3e2c1a00-3b42-4b7e-9c3e-000000000004"
+# Read-only: the device's own "http://host:port" base URL, so a BLE-connected
+# app can discover it and offer to switch to WiFi for the bulk-data transports
+# (thumbnails, library, status polling) that BLE's tiny ATT payloads can't carry.
+NETWORK_INFO_CHARACTERISTIC_UUID = "3e2c1a00-3b42-4b7e-9c3e-000000000005"
 
 # iOS long-reads cap out at 512 bytes (BLE ATT maximum attribute value length).
 MAX_CHARACTERISTIC_BYTES = 512

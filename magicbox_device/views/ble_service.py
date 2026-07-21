@@ -22,11 +22,12 @@ STATUS_POLL_INTERVAL_SECONDS = 1.0
 
 
 class MagicBoxService(Service):
-    def __init__(self, controller: PlaybackController):
+    def __init__(self, controller: PlaybackController, network_url: str):
         super().__init__(protocol.SERVICE_UUID, True)
         self._controller = controller
         self._library_bytes = protocol.encode_library(controller.movies)
         self._status_bytes = protocol.encode_status(PlaybackState.idle())
+        self._network_url_bytes = network_url.encode("utf-8")
         self._poll_task: Optional[asyncio.Task] = None
 
     def start_status_polling(self) -> None:
@@ -78,3 +79,7 @@ class MagicBoxService(Service):
     @characteristic(protocol.LIBRARY_CHARACTERISTIC_UUID, CharFlags.READ)
     def library(self, options):
         return self._library_bytes
+
+    @characteristic(protocol.NETWORK_INFO_CHARACTERISTIC_UUID, CharFlags.READ)
+    def network_info(self, options):
+        return self._network_url_bytes
