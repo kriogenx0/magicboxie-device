@@ -1,6 +1,7 @@
 IMAGE := magicbox-device
+MOVIES_DIR := movies
 
-.PHONY: all setup dev build test clean
+.PHONY: all setup dev build test clean seed-movies
 
 all: setup dev
 
@@ -9,10 +10,29 @@ setup:
 	@command -v docker >/dev/null || { echo "docker not found - install Docker Desktop / Engine first"; exit 1; }
 	docker build --target base -t $(IMAGE):latest .
 
+# Seeds a few sample videos into an empty movies/ dir so there's always
+# something to browse in dev - real movie files are large and won't be
+# sitting in a fresh checkout. No-ops if movies/ already has content, so
+# it's safe to depend on from `dev` every time rather than only once.
+# Durations are chosen to land in each of the three MovieCategory buckets.
+seed-movies:
+	@mkdir -p $(MOVIES_DIR)
+	@if [ -z "$$(find $(MOVIES_DIR) -maxdepth 1 -iname '*.mp4' -print -quit)" ]; then \
+		echo "No movies found - seeding sample videos into $(MOVIES_DIR)/..."; \
+		docker build --target base -t $(IMAGE):latest . >/dev/null; \
+		docker run --rm -v "$$(pwd)/$(MOVIES_DIR):/movies" --entrypoint sh $(IMAGE):latest -c '\
+			ffmpeg -loglevel error -f lavfi -i "testsrc=duration=6000:size=320x240:rate=1" -y "/movies/Sample Feature Film.mp4" && \
+			ffmpeg -loglevel error -f lavfi -i "smptebars=duration=1500:size=320x240:rate=1" -y "/movies/Sample TV Episode.mp4" && \
+			ffmpeg -loglevel error -f lavfi -i "testsrc=duration=180:size=320x240:rate=1" -y "/movies/Sample Clip.mp4" \
+		'; \
+	else \
+		echo "Movies already present in $(MOVIES_DIR)/, skipping seed."; \
+	fi
+
 # Build for development and run it. `docker compose up --build` recreates the
 # container from the freshly built image automatically, so there's nothing to
 # manually delete between runs.
-dev:
+dev: seed-movies
 	docker compose up -d --build
 	docker compose logs -f
 
