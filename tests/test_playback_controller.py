@@ -29,6 +29,32 @@ def test_stop_clears_movie_id():
     assert state.movie_id is None
 
 
+def test_stop_shows_idle_screen():
+    async def scenario():
+        mpv = FakeMpv()
+        controller = PlaybackController(FakeLibrary(), mpv)
+        await controller.handle_command(Command(opcode=Opcode.SELECT_MOVIE, argument=0))
+        await controller.handle_command(Command(opcode=Opcode.STOP))
+        return mpv
+
+    mpv = asyncio.run(scenario())
+    assert mpv.shown_image_path is not None
+
+
+def test_status_stays_idle_while_idle_screen_is_shown():
+    """The idle-screen image is itself loaded into mpv as a "file" (see
+    MpvController.show_image), which would otherwise report as "not idle" -
+    refresh_status must not mistake it for a movie playing."""
+    async def scenario():
+        controller = PlaybackController(FakeLibrary(), FakeMpv())
+        await controller.show_idle_screen()
+        return await controller.refresh_status()
+
+    state = asyncio.run(scenario())
+    assert state.status == PlaybackStatus.STOPPED
+    assert state.movie_id is None
+
+
 def test_pause_reflected_in_status():
     async def scenario():
         controller = PlaybackController(FakeLibrary(), FakeMpv())

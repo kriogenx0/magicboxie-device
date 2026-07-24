@@ -1,11 +1,13 @@
 [project]
 name = "magicbox-device"
 version = "0.1.0"
-description = "MagicBox device daemon: BLE GATT control surface driving mpv for Component Video playback"
+description = "MagicBox device daemon: BLE GATT control surface driving mpv for HDMI playback"
 requires-python = ">=3.9"
 dependencies = [
     "bluez-peripheral>=0.1.7",
     "aiohttp>=3.9",
+    "Pillow>=10.0",
+    "evdev>=1.6",
 ]
 
 [project.optional-dependencies]

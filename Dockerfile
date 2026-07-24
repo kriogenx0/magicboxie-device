@@ -1,9 +1,17 @@
 FROM python:3.11-slim-bookworm AS base
 
-# mpv for playback, ffmpeg (ffprobe) for reading movie durations when scanning the library.
+# mpv for playback, ffmpeg (ffprobe) for reading movie durations when scanning
+# the library. build-essential/python3-dev/libjpeg-dev/zlib1g-dev let evdev
+# (keyboard input) and Pillow (idle-screen thumbnail grid) build from source -
+# needed on the target Pi Zero W's 32-bit ARMv6, which PyPI rarely ships
+# prebuilt wheels for.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     mpv \
     ffmpeg \
+    build-essential \
+    python3-dev \
+    libjpeg-dev \
+    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

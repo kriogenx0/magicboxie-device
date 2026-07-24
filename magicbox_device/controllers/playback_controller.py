@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
+from ..models.idle_screen import render_idle_screen
 from ..models.library import MovieLibrary
 from ..models.player import MpvController
 from ..models.protocol import Command, Movie, Opcode, PlaybackState, PlaybackStatus
@@ -31,12 +32,33 @@ class PlaybackController:
         elif cmd.opcode == Opcode.PAUSE:
             await self.player.pause()
         elif cmd.opcode == Opcode.STOP:
-            await self.player.stop()
-            self._current_movie_id = None
+            await self.stop_and_show_idle_screen()
         elif cmd.opcode == Opcode.SEEK and cmd.argument is not None:
             await self.player.seek(cmd.argument)
 
+    async def show_idle_screen(self) -> None:
+        """Displays the thumbnail-grid home screen - the device's resting
+        state whenever nothing is selected to play (at startup, and after
+        stop_and_show_idle_screen())."""
+        image_path = render_idle_screen(self.library)
+        await self.player.show_image(image_path)
+
+    async def stop_and_show_idle_screen(self) -> None:
+        """What both an explicit stop command and the local keyboard's
+        Escape key do - stop whatever's playing and return to the thumbnail
+        grid, so the screen never just goes blank or freezes on the last
+        frame."""
+        await self.player.stop()
+        self._current_movie_id = None
+        await self.show_idle_screen()
+
     async def refresh_status(self) -> PlaybackState:
+        # Nothing selected - already known to be idle without asking mpv,
+        # which would otherwise report "not idle" while the idle-screen
+        # image itself is loaded (see MpvController.show_image).
+        if self._current_movie_id is None:
+            return PlaybackState.idle()
+
         idle = await self.player.get_idle()
         if idle:
             self._current_movie_id = None

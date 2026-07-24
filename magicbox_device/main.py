@@ -40,8 +40,8 @@ ADVERT_REFRESH_SECONDS = 150
 
 
 def _mpv_output_args() -> List[str]:
-    # Defaults target rendering straight to the framebuffer via DRM/KMS, which is
-    # what feeds an HDMI-to-Component converter on a Pi with no desktop running.
+    # Defaults target rendering straight to the framebuffer via DRM/KMS - the
+    # Pi's own HDMI output, with no desktop environment running.
     # Override with MAGICBOX_MPV_ARGS if your hardware needs a different --vo/--gpu-context.
     raw = os.environ.get("MAGICBOX_MPV_ARGS", "--vo=gpu --gpu-context=drm")
     return raw.split()
@@ -73,6 +73,9 @@ async def _run() -> None:
     await player.start()
 
     controller = PlaybackController(library, player)
+    # Resting state until something's selected to play - the screen should
+    # never just be black/whatever mpv's own idle window looks like.
+    await controller.show_idle_screen()
 
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -80,13 +83,13 @@ async def _run() -> None:
         loop.add_signal_handler(sig, stop_event.set)
 
     try:
-        if TRANSPORT == "http":
-            await _run_http(controller, stop_event)
-        else:
-            await asyncio.gather(
-                _run_ble(controller, stop_event),
-                _run_http(controller, stop_event),
-            )
+        tasks = [
+            _run_http(controller, stop_event),
+            _run_keyboard(controller, stop_event),
+        ]
+        if TRANSPORT != "http":
+            tasks.append(_run_ble(controller, stop_event))
+        await asyncio.gather(*tasks)
     finally:
         await player.stop_process()
 
@@ -105,6 +108,15 @@ async def _run_http(controller: PlaybackController, stop_event: asyncio.Event) -
 
     await stop_event.wait()
     await runner.cleanup()
+
+
+async def _run_keyboard(controller: PlaybackController, stop_event: asyncio.Event) -> None:
+    """Escape-to-stop from a directly-attached USB keyboard - the device's
+    only local input, independent of BLE/HTTP and the iOS app. Runs in both
+    transport modes, and is a no-op if no keyboard is ever attached."""
+    from .views.keyboard_service import KeyboardService
+
+    await KeyboardService(controller).run(stop_event)
 
 
 async def _run_ble(controller: PlaybackController, stop_event: asyncio.Event) -> None:

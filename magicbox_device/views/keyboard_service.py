@@ -1,0 +1,82 @@
+"""Local input transport: a USB keyboard is the only way to control the
+device without the iOS app, so pressing Escape stops whatever's playing and
+returns to the thumbnail grid. Entirely optional - if no keyboard is
+attached, this just periodically finds nothing and does nothing.
+
+Devices are (re)scanned on an interval rather than once at startup so a
+keyboard plugged in after boot still gets picked up.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Set
+
+from ..controllers.playback_controller import PlaybackController
+
+logger = logging.getLogger(__name__)
+
+RESCAN_INTERVAL_SECONDS = 5.0
+
+
+class KeyboardService:
+    def __init__(self, controller: PlaybackController):
+        self._controller = controller
+        self._watched_paths: Set[str] = set()
+        self._watch_tasks: Set[asyncio.Task] = set()
+
+    async def run(self, stop_event: asyncio.Event) -> None:
+        try:
+            while not stop_event.is_set():
+                self._attach_new_keyboards()
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=RESCAN_INTERVAL_SECONDS)
+                except asyncio.TimeoutError:
+                    continue
+        finally:
+            for task in self._watch_tasks:
+                task.cancel()
+
+    def _attach_new_keyboards(self) -> None:
+        try:
+            import evdev
+        except ImportError:
+            logger.warning("evdev not installed - keyboard Escape-to-stop is disabled")
+            return
+
+        try:
+            device_paths = evdev.list_devices()
+        except OSError as exc:
+            logger.debug("Could not list input devices: %s", exc)
+            return
+
+        for path in device_paths:
+            if path in self._watched_paths:
+                continue
+            try:
+                device = evdev.InputDevice(path)
+                is_keyboard = evdev.ecodes.KEY_ESC in device.capabilities().get(evdev.ecodes.EV_KEY, [])
+            except OSError as exc:
+                logger.debug("Could not inspect input device %s: %s", path, exc)
+                continue
+            if not is_keyboard:
+                continue
+
+            self._watched_paths.add(path)
+            task = asyncio.create_task(self._watch(device))
+            self._watch_tasks.add(task)
+            task.add_done_callback(self._watch_tasks.discard)
+            logger.info("Watching for Escape on keyboard %s (%s)", path, device.name)
+
+    async def _watch(self, device) -> None:
+        import evdev
+
+        try:
+            async for event in device.async_read_loop():
+                if event.type == evdev.ecodes.EV_KEY and event.code == evdev.ecodes.KEY_ESC and event.value == 1:
+                    logger.info("Escape pressed - stopping playback")
+                    await self._controller.stop_and_show_idle_screen()
+        except OSError:
+            # Most likely unplugged - drop it so a later rescan can pick it
+            # back up if it's reconnected (possibly at a different path).
+            self._watched_paths.discard(device.path)

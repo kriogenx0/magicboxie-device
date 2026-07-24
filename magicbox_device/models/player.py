@@ -87,6 +87,13 @@ class MpvController:
     async def load(self, path: Path) -> None:
         await self._command("loadfile", str(path), "replace")
 
+    async def show_image(self, path: Path) -> None:
+        """Like load(), but for a still image meant to sit on screen
+        indefinitely (the idle/home screen) rather than play through and
+        stop - mpv's default image-display-duration is finite, which would
+        otherwise drop it back to idle almost immediately."""
+        await self._command("loadfile", str(path), "replace", "image-display-duration=inf")
+
     async def play(self) -> None:
         await self._command("set_property", "pause", False)
 

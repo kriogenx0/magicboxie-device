@@ -7,6 +7,7 @@ from magicbox_device.models.protocol import Movie
 class FakeMpv:
     def __init__(self):
         self.loaded_path = None
+        self.shown_image_path = None
         self.paused = True
         self.idle = True
         self.position = 0
@@ -15,6 +16,11 @@ class FakeMpv:
         self.loaded_path = path
         self.idle = False
         self.paused = False
+
+    async def show_image(self, path):
+        self.shown_image_path = path
+        self.idle = False
+        self.paused = True
 
     async def play(self):
         self.paused = False
