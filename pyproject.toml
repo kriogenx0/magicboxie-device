@@ -17,6 +17,7 @@ dev = [
 
 [project.scripts]
 magicbox-device = "magicbox_device.main:run"
+magicbox-scan = "magicbox_device.scan:run"
 
 [build-system]
 requires = ["setuptools>=61.0"]
