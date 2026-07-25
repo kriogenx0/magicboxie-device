@@ -67,7 +67,7 @@ async def _run() -> None:
         raise SystemExit(f"Movies directory does not exist: {MOVIES_DIR}")
 
     library = MovieLibrary(MOVIES_DIR, thumbnail_dir=THUMBNAIL_DIR)
-    library.scan()
+    library.load()
 
     player = MpvController(extra_args=_mpv_output_args())
     await player.start()

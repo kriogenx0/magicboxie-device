@@ -1,6 +1,15 @@
-"""Scans a directory of video files and exposes them via protocol.Movie."""
+"""Scans a directory of video files and exposes them via protocol.Movie.
+
+Scanning (ffprobe for duration, ffmpeg for thumbnails) is slow enough on a
+Pi Zero that it shouldn't happen on every daemon boot. `scan()` does the
+real work and persists its result to a JSON index; `load()` is the fast
+path the daemon uses at startup, reading that index instead of re-probing
+every file. See `magicbox_device.scan`, the standalone CLI that runs
+`scan()` as a systemd ExecStartPre step ahead of the daemon itself.
+"""
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 from pathlib import Path
@@ -18,7 +27,12 @@ THUMBNAIL_WIDTH = 200
 
 
 class MovieLibrary:
-    def __init__(self, root: Path, thumbnail_dir: Path = DEFAULT_THUMBNAIL_DIR):
+    def __init__(
+        self,
+        root: Path,
+        thumbnail_dir: Path = DEFAULT_THUMBNAIL_DIR,
+        index_path: Optional[Path] = None,
+    ):
         # The movies directory is typically mounted read-only, so thumbnails
         # are cached in a separate, writable location instead of alongside it.
         self.root = root
@@ -26,8 +40,14 @@ class MovieLibrary:
         self._paths: Dict[int, Path] = {}
         self._thumbnail_paths: Dict[int, Path] = {}
         self._thumbnail_dir = thumbnail_dir
+        # Defaults alongside the thumbnail cache rather than a fixed system
+        # path, so passing a tmp_path thumbnail_dir (as tests do) keeps the
+        # index out of /var/lib too.
+        self._index_path = index_path if index_path is not None else thumbnail_dir.parent / "library.json"
 
     def scan(self) -> List[Movie]:
+        """Full (re)scan: probes every file with ffprobe/ffmpeg and persists
+        the result to the JSON index for a later load() to pick up."""
         self._thumbnail_dir.mkdir(parents=True, exist_ok=True)
 
         files = sorted(
@@ -52,7 +72,49 @@ class MovieLibrary:
         self._paths = paths
         self._thumbnail_paths = thumbnail_paths
         logger.info("Scanned %d movie(s) in %s", len(movies), self.root)
+        self._write_index()
         return movies
+
+    def load(self) -> List[Movie]:
+        """Fast startup path: reads the JSON index scan() last wrote instead
+        of touching ffprobe/ffmpeg. Falls back to a full scan() if there's
+        no index yet (e.g. local/dev runs that skip the separate scan step)."""
+        if not self._index_path.is_file():
+            logger.info("No library index at %s - scanning %s directly", self._index_path, self.root)
+            return self.scan()
+
+        entries = json.loads(self._index_path.read_text())
+
+        movies = []
+        paths = {}
+        thumbnail_paths = {}
+        for entry in entries:
+            movie_id = entry["id"]
+            movies.append(Movie(id=movie_id, title=entry["title"], duration_seconds=entry["duration_seconds"]))
+            paths[movie_id] = self.root / entry["filename"]
+
+            thumbnail_path = self._thumbnail_dir / f"{movie_id}.jpg"
+            if thumbnail_path.is_file():
+                thumbnail_paths[movie_id] = thumbnail_path
+
+        self._movies = movies
+        self._paths = paths
+        self._thumbnail_paths = thumbnail_paths
+        logger.info("Loaded %d movie(s) from index %s", len(movies), self._index_path)
+        return movies
+
+    def _write_index(self) -> None:
+        self._index_path.parent.mkdir(parents=True, exist_ok=True)
+        entries = [
+            {
+                "id": movie.id,
+                "filename": self._paths[movie.id].name,
+                "title": movie.title,
+                "duration_seconds": movie.duration_seconds,
+            }
+            for movie in self._movies
+        ]
+        self._index_path.write_text(json.dumps(entries, indent=2))
 
     @property
     def movies(self) -> List[Movie]:
