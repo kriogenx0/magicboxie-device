@@ -1,9 +1,25 @@
 IMAGE := magicbox-device
 MOVIES_DIR := movies
+VENV := .venv
+THUMBNAIL_DIR := /var/lib/magicbox/thumbnails
+# Fixed absolute path on the Pi where content lives - independent of wherever
+# this repo happens to be checked out, unlike MOVIES_DIR above (which is
+# Docker-dev-only, relative to the repo, and unrelated to the real device).
+CONTENT_DIR := /content
+SERVICE_NAME := magicbox-device
+SERVICE_FILE := /etc/systemd/system/$(SERVICE_NAME).service
 
-.PHONY: all setup dev build test clean seed-movies
+.PHONY: all setup dev build test clean seed-movies \
+	pi-install pi-setup pi-seed-movies pi-run pi-test pi-service pi-start pi-stop \
+	pi-restart pi-redeploy pi-logs pi-uninstall pi-clean
 
 all: setup dev
+
+# --- Docker dev (Mac/other non-Pi machines) -------------------------------
+# These targets build/run in Docker for local development off the Pi. For
+# the real device, use the `pi-*` targets below instead - the Pi runs the
+# daemon natively (systemd + a venv), since Docker buys nothing on a
+# single-purpose device and adds overhead the Pi Zero W can't spare.
 
 # Everything here builds/runs in Docker - no local Python/venv needed.
 setup:
@@ -48,3 +64,100 @@ test:
 clean:
 	docker compose down --rmi local --volumes --remove-orphans 2>/dev/null || true
 	docker image rm -f $(IMAGE):latest $(IMAGE):test 2>/dev/null || true
+
+# --- Raspberry Pi (native, no Docker) -------------------------------------
+# The real device: installs system packages + a venv directly on the Pi and
+# runs the daemon as a systemd service (BLE transport, DRM/KMS HDMI output).
+# Run these on the Pi itself, over SSH or a directly attached keyboard.
+
+# One-shot: after copying this directory onto the Pi, `make pi-install` is
+# the single command that gets a running, boot-persistent device - installs
+# packages, seeds sample movies into /content if it's empty, installs+enables
+# the systemd service, and starts it. (The service itself gets video/input/
+# bluetooth access straight from its unit file's SupplementaryGroups, so it
+# doesn't need the installing shell's own group membership to have
+# refreshed - that only matters if you separately use `make pi-run`.)
+pi-install: pi-setup pi-seed-movies pi-service pi-start
+	@echo "pi-install complete - MagicBox is running and will start automatically on boot."
+	@echo "Check status with: make pi-logs"
+
+# System packages (mpv/ffmpeg/bluez + build headers for evdev/Pillow) and a
+# venv with the app installed. Adds the invoking user to the video/input/
+# bluetooth groups it needs for DRM output, keyboard Escape-to-stop, and
+# BLE - re-login (or reboot) is required for that group change to apply.
+pi-setup:
+	@command -v apt-get >/dev/null || { echo "apt-get not found - pi-* targets are for Raspberry Pi OS/Debian"; exit 1; }
+	sudo apt-get update
+	sudo apt-get install -y --no-install-recommends \
+		python3-venv python3-dev build-essential \
+		mpv ffmpeg libjpeg-dev zlib1g-dev \
+		bluez dbus
+	sudo usermod -aG video,input,bluetooth "$$(whoami)"
+	python3 -m venv $(VENV)
+	$(VENV)/bin/pip install --upgrade pip
+	$(VENV)/bin/pip install -e .
+	sudo mkdir -p $(THUMBNAIL_DIR) $(CONTENT_DIR)
+	sudo chown "$$(whoami)" $(THUMBNAIL_DIR) $(CONTENT_DIR)
+	@echo "pi-setup complete - log out/in (or reboot) so the new group membership takes effect."
+
+# Same sample-video seeding as `seed-movies`, but into the real device's
+# fixed content directory, using the ffmpeg installed straight onto the Pi
+# by pi-setup instead of a Docker image.
+pi-seed-movies:
+	@if [ -z "$$(find $(CONTENT_DIR) -maxdepth 1 -iname '*.mp4' -print -quit 2>/dev/null)" ]; then \
+		echo "No movies found - seeding sample videos into $(CONTENT_DIR)/..."; \
+		ffmpeg -loglevel error -f lavfi -i "testsrc=duration=6000:size=320x240:rate=1" -y "$(CONTENT_DIR)/Sample Feature Film.mp4" && \
+		ffmpeg -loglevel error -f lavfi -i "smptebars=duration=1500:size=320x240:rate=1" -y "$(CONTENT_DIR)/Sample TV Episode.mp4" && \
+		ffmpeg -loglevel error -f lavfi -i "testsrc=duration=180:size=320x240:rate=1" -y "$(CONTENT_DIR)/Sample Clip.mp4"; \
+	else \
+		echo "Movies already present in $(CONTENT_DIR)/, skipping seed."; \
+	fi
+
+# Foreground run in the current terminal - useful for a quick check or
+# debugging without installing the systemd service. Ctrl-C to stop.
+pi-run: pi-seed-movies
+	MAGICBOX_MOVIES_DIR=$(CONTENT_DIR) MAGICBOX_THUMBNAIL_DIR=$(THUMBNAIL_DIR) $(VENV)/bin/magicbox-device
+
+# Runs the test suite in the same venv the app runs in on the Pi.
+pi-test:
+	$(VENV)/bin/pip install -e ".[dev]"
+	$(VENV)/bin/python -m pytest -v tests
+
+# Renders deploy/magicbox-device.service.in (user/paths filled in) to
+# /etc/systemd/system and enables it to start on boot. Doesn't start it -
+# run `make pi-start` (or reboot) after.
+pi-service: pi-setup
+	sed \
+		-e 's|@USER@|'"$$(whoami)"'|g' \
+		-e 's|@REPO_DIR@|$(CURDIR)|g' \
+		-e 's|@MOVIES_DIR@|$(CONTENT_DIR)|g' \
+		-e 's|@THUMBNAIL_DIR@|$(THUMBNAIL_DIR)|g' \
+		deploy/magicbox-device.service.in | sudo tee $(SERVICE_FILE) >/dev/null
+	sudo systemctl daemon-reload
+	sudo systemctl enable $(SERVICE_NAME)
+	@echo "Service installed and enabled - run 'make pi-start' to start it now."
+
+pi-start:
+	sudo systemctl start $(SERVICE_NAME)
+
+pi-stop:
+	sudo systemctl stop $(SERVICE_NAME)
+
+pi-restart:
+	sudo systemctl restart $(SERVICE_NAME)
+
+# After pulling new code: reinstall into the venv and restart the service.
+pi-redeploy:
+	$(VENV)/bin/pip install -e .
+	sudo systemctl restart $(SERVICE_NAME)
+
+pi-logs:
+	journalctl -u $(SERVICE_NAME) -f
+
+pi-uninstall:
+	sudo systemctl disable --now $(SERVICE_NAME) 2>/dev/null || true
+	sudo rm -f $(SERVICE_FILE)
+	sudo systemctl daemon-reload
+
+pi-clean:
+	rm -rf $(VENV)
