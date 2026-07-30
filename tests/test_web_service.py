@@ -20,7 +20,7 @@ def test_get_movies():
     async def scenario():
         client, _ = await _make_client()
         try:
-            resp = await client.get("/movies")
+            resp = await client.get("/api/movies")
             assert resp.status == 200
             return await resp.json()
         finally:
@@ -37,9 +37,9 @@ def test_post_command_select_and_play_reflected_in_status():
     async def scenario():
         client, _ = await _make_client()
         try:
-            resp = await client.post("/command", json={"opcode": "select_movie", "argument": 1})
+            resp = await client.post("/api/command", json={"opcode": "select_movie", "argument": 1})
             assert resp.status == 200
-            resp = await client.get("/status")
+            resp = await client.get("/api/status")
             return await resp.json()
         finally:
             await client.close()
@@ -53,7 +53,7 @@ def test_post_command_unknown_opcode_returns_400():
     async def scenario():
         client, _ = await _make_client()
         try:
-            resp = await client.post("/command", json={"opcode": "not_a_real_command"})
+            resp = await client.post("/api/command", json={"opcode": "not_a_real_command"})
             return resp.status
         finally:
             await client.close()
@@ -68,7 +68,7 @@ def test_get_thumbnail_returns_file_bytes(tmp_path):
     async def scenario():
         client, _ = await _make_client(FakeLibrary(thumbnail_paths={0: thumbnail_path}))
         try:
-            resp = await client.get("/movies/0/thumbnail")
+            resp = await client.get("/api/movies/0/thumbnail")
             assert resp.status == 200
             return await resp.read()
         finally:
@@ -81,7 +81,7 @@ def test_get_thumbnail_missing_returns_404():
     async def scenario():
         client, _ = await _make_client()
         try:
-            resp = await client.get("/movies/0/thumbnail")
+            resp = await client.get("/api/movies/0/thumbnail")
             return resp.status
         finally:
             await client.close()
@@ -93,7 +93,7 @@ def test_get_thumbnail_invalid_id_returns_400():
     async def scenario():
         client, _ = await _make_client()
         try:
-            resp = await client.get("/movies/not-a-number/thumbnail")
+            resp = await client.get("/api/movies/not-a-number/thumbnail")
             return resp.status
         finally:
             await client.close()
@@ -105,9 +105,9 @@ def test_post_thumbnail_upload_then_get_returns_uploaded_bytes(tmp_path):
     async def scenario():
         client, _ = await _make_client(FakeLibrary(thumbnail_dir=tmp_path))
         try:
-            resp = await client.post("/movies/0/thumbnail", data=b"official-poster-bytes")
+            resp = await client.post("/api/movies/0/thumbnail", data=b"official-poster-bytes")
             assert resp.status == 200
-            resp = await client.get("/movies/0/thumbnail")
+            resp = await client.get("/api/movies/0/thumbnail")
             assert resp.status == 200
             return await resp.read()
         finally:
@@ -120,7 +120,7 @@ def test_post_thumbnail_unknown_movie_returns_404():
     async def scenario():
         client, _ = await _make_client()
         try:
-            resp = await client.post("/movies/99/thumbnail", data=b"bytes")
+            resp = await client.post("/api/movies/99/thumbnail", data=b"bytes")
             return resp.status
         finally:
             await client.close()
@@ -132,7 +132,7 @@ def test_post_thumbnail_invalid_id_returns_400():
     async def scenario():
         client, _ = await _make_client()
         try:
-            resp = await client.post("/movies/not-a-number/thumbnail", data=b"bytes")
+            resp = await client.post("/api/movies/not-a-number/thumbnail", data=b"bytes")
             return resp.status
         finally:
             await client.close()
@@ -144,7 +144,7 @@ def test_post_thumbnail_empty_body_returns_400(tmp_path):
     async def scenario():
         client, _ = await _make_client(FakeLibrary(thumbnail_dir=tmp_path))
         try:
-            resp = await client.post("/movies/0/thumbnail", data=b"")
+            resp = await client.post("/api/movies/0/thumbnail", data=b"")
             return resp.status
         finally:
             await client.close()
@@ -167,7 +167,7 @@ def test_post_movie_uploads_and_appears_in_library(tmp_path):
         client, _ = await _make_client(library)
         try:
             resp = await client.post(
-                "/movies",
+                "/api/movies",
                 data=b"fake-video-bytes",
                 headers={"X-Filename": "New Movie.mp4"},
             )
@@ -175,7 +175,7 @@ def test_post_movie_uploads_and_appears_in_library(tmp_path):
             body = await resp.json()
             assert body["title"] == "New Movie"
 
-            resp = await client.get("/movies")
+            resp = await client.get("/api/movies")
             return await resp.json()
         finally:
             await client.close()
@@ -191,7 +191,7 @@ def test_post_movie_missing_filename_header_returns_400(tmp_path):
     async def scenario():
         client, _ = await _make_client(library)
         try:
-            resp = await client.post("/movies", data=b"bytes")
+            resp = await client.post("/api/movies", data=b"bytes")
             return resp.status
         finally:
             await client.close()
@@ -206,7 +206,7 @@ def test_post_movie_unsupported_extension_returns_400(tmp_path):
         client, _ = await _make_client(library)
         try:
             resp = await client.post(
-                "/movies", data=b"bytes", headers={"X-Filename": "not-a-video.txt"}
+                "/api/movies", data=b"bytes", headers={"X-Filename": "not-a-video.txt"}
             )
             return resp.status
         finally:
@@ -223,7 +223,7 @@ def test_post_movie_duplicate_filename_returns_409(tmp_path):
         client, _ = await _make_client(library)
         try:
             resp = await client.post(
-                "/movies", data=b"new-bytes", headers={"X-Filename": "Existing.mp4"}
+                "/api/movies", data=b"new-bytes", headers={"X-Filename": "Existing.mp4"}
             )
             return resp.status
         finally:
@@ -239,7 +239,7 @@ def test_post_movie_empty_body_returns_400(tmp_path):
         client, _ = await _make_client(library)
         try:
             resp = await client.post(
-                "/movies", data=b"", headers={"X-Filename": "Empty.mp4"}
+                "/api/movies", data=b"", headers={"X-Filename": "Empty.mp4"}
             )
             return resp.status
         finally:

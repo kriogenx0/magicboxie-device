@@ -32,12 +32,12 @@ def create_app(controller: PlaybackController) -> web.Application:
     app = web.Application(client_max_size=_MAX_UPLOAD_BYTES)
     app[_CONTROLLER_KEY] = controller
 
-    app.router.add_get("/movies", _get_movies)
-    app.router.add_post("/movies", _post_movie)
-    app.router.add_get("/movies/{id}/thumbnail", _get_thumbnail)
-    app.router.add_post("/movies/{id}/thumbnail", _post_thumbnail)
-    app.router.add_get("/status", _get_status)
-    app.router.add_post("/command", _post_command)
+    app.router.add_get("/api/movies", _get_movies)
+    app.router.add_post("/api/movies", _post_movie)
+    app.router.add_get("/api/movies/{id}/thumbnail", _get_thumbnail)
+    app.router.add_post("/api/movies/{id}/thumbnail", _post_thumbnail)
+    app.router.add_get("/api/status", _get_status)
+    app.router.add_post("/api/command", _post_command)
     return app
 
 
