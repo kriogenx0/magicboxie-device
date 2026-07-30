@@ -14,10 +14,6 @@ Environment=MAGICBOX_TRANSPORT=ble
 Environment=MAGICBOX_DEVICE_NAME=MagicBox
 Environment=MAGICBOX_MOVIES_DIR=@MOVIES_DIR@
 Environment=MAGICBOX_THUMBNAIL_DIR=@THUMBNAIL_DIR@
-# Parses @MOVIES_DIR@ into the static library index (+ thumbnails) that
-# magicbox-device loads at startup - runs fresh on every start/restart so
-# newly dropped-in content is always picked up without a manual rescan step.
-ExecStartPre=@REPO_DIR@/.venv/bin/magicbox-scan
 ExecStart=@REPO_DIR@/.venv/bin/magicbox-device
 Restart=on-failure
 RestartSec=2
