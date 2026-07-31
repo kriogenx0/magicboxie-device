@@ -28,8 +28,8 @@ def test_get_movies():
 
     data = asyncio.run(scenario())
     assert data == [
-        {"id": 0, "title": "A", "duration_seconds": 100},
-        {"id": 1, "title": "B", "duration_seconds": 200},
+        {"id": 0, "title": "A", "duration_seconds": 100, "description": None, "year": None},
+        {"id": 1, "title": "B", "duration_seconds": 200, "description": None, "year": None},
     ]
 
 
@@ -152,6 +152,83 @@ def test_post_thumbnail_empty_body_returns_400(tmp_path):
     assert asyncio.run(scenario()) == 400
 
 
+def test_post_metadata_overrides_fields_in_movie_list():
+    async def scenario():
+        client, _ = await _make_client()
+        try:
+            resp = await client.post(
+                "/api/movies/0/metadata",
+                json={"title": "Alpha", "description": "A movie.", "year": 1999},
+            )
+            assert resp.status == 200
+            body = await resp.json()
+
+            resp = await client.get("/api/movies")
+            return body, await resp.json()
+        finally:
+            await client.close()
+
+    post_body, movies = asyncio.run(scenario())
+    expected = {
+        "id": 0,
+        "title": "Alpha",
+        "duration_seconds": 100,
+        "description": "A movie.",
+        "year": 1999,
+    }
+    assert post_body == expected
+    assert movies[0] == expected
+    assert movies[1] == {"id": 1, "title": "B", "duration_seconds": 200, "description": None, "year": None}
+
+
+def test_post_metadata_unknown_movie_returns_404():
+    async def scenario():
+        client, _ = await _make_client()
+        try:
+            resp = await client.post("/api/movies/99/metadata", json={"title": "X"})
+            return resp.status
+        finally:
+            await client.close()
+
+    assert asyncio.run(scenario()) == 404
+
+
+def test_post_metadata_invalid_id_returns_400():
+    async def scenario():
+        client, _ = await _make_client()
+        try:
+            resp = await client.post("/api/movies/not-a-number/metadata", json={"title": "X"})
+            return resp.status
+        finally:
+            await client.close()
+
+    assert asyncio.run(scenario()) == 400
+
+
+def test_post_metadata_non_integer_year_returns_400():
+    async def scenario():
+        client, _ = await _make_client()
+        try:
+            resp = await client.post("/api/movies/0/metadata", json={"year": "not-a-year"})
+            return resp.status
+        finally:
+            await client.close()
+
+    assert asyncio.run(scenario()) == 400
+
+
+def test_post_metadata_empty_body_returns_400():
+    async def scenario():
+        client, _ = await _make_client()
+        try:
+            resp = await client.post("/api/movies/0/metadata", json={})
+            return resp.status
+        finally:
+            await client.close()
+
+    assert asyncio.run(scenario()) == 400
+
+
 def _real_library(tmp_path):
     movies_dir = tmp_path / "movies"
     movies_dir.mkdir()
@@ -183,6 +260,24 @@ def test_post_movie_uploads_and_appears_in_library(tmp_path):
     movies = asyncio.run(scenario())
     assert [m["title"] for m in movies] == ["New Movie"]
     assert (tmp_path / "movies" / "New Movie.mp4").read_bytes() == b"fake-video-bytes"
+
+
+def test_post_rescan_picks_up_files_added_directly_to_the_filesystem(tmp_path):
+    library = _real_library(tmp_path)
+
+    async def scenario():
+        client, _ = await _make_client(library)
+        try:
+            (tmp_path / "movies" / "Added Directly.mp4").write_bytes(b"fake-video-bytes")
+
+            resp = await client.post("/api/rescan")
+            assert resp.status == 200
+            return await resp.json()
+        finally:
+            await client.close()
+
+    movies = asyncio.run(scenario())
+    assert [m["title"] for m in movies] == ["Added Directly"]
 
 
 def test_post_movie_missing_filename_header_returns_400(tmp_path):

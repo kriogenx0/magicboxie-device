@@ -47,10 +47,11 @@ class FakeMpv:
 
 
 class FakeLibrary:
-    def __init__(self, thumbnail_paths=None, thumbnail_dir=None):
+    def __init__(self, thumbnail_paths=None, thumbnail_dir=None, metadata=None):
         self._paths = {0: Path("/movies/a.mp4"), 1: Path("/movies/b.mp4")}
         self._thumbnail_paths = thumbnail_paths or {}
         self._thumbnail_dir = thumbnail_dir
+        self._metadata = metadata or {}
 
     @property
     def movies(self):
@@ -71,3 +72,11 @@ class FakeLibrary:
         path = self._thumbnail_dir / f"{movie_id}.jpg"
         path.write_bytes(data)
         self._thumbnail_paths[movie_id] = path
+
+    def metadata_for(self, movie_id):
+        return self._metadata.get(movie_id, {})
+
+    def save_metadata(self, movie_id, **fields):
+        updated = {**self._metadata.get(movie_id, {}), **fields}
+        self._metadata[movie_id] = updated
+        return updated

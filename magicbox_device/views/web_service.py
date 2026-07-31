@@ -14,7 +14,9 @@ from aiohttp import web
 
 from ..controllers.playback_controller import PlaybackController
 from ..models.library import VIDEO_EXTENSIONS
-from ..models.protocol import Command, Opcode
+from ..models.protocol import Command, Movie, Opcode
+
+_METADATA_FIELDS = ("title", "description", "year", "duration_seconds")
 
 logger = logging.getLogger(__name__)
 
@@ -34,19 +36,47 @@ def create_app(controller: PlaybackController) -> web.Application:
 
     app.router.add_get("/api/movies", _get_movies)
     app.router.add_post("/api/movies", _post_movie)
+    app.router.add_post("/api/rescan", _post_rescan)
     app.router.add_get("/api/movies/{id}/thumbnail", _get_thumbnail)
     app.router.add_post("/api/movies/{id}/thumbnail", _post_thumbnail)
+    app.router.add_post("/api/movies/{id}/metadata", _post_metadata)
     app.router.add_get("/api/status", _get_status)
     app.router.add_post("/api/command", _post_command)
     return app
 
 
+def _movie_payload(controller: PlaybackController, movie: Movie) -> dict:
+    """Base fields from the filesystem scan, overlaid with any
+    phone-supplied metadata (title/description/year/duration) fetched
+    online - see _post_metadata."""
+    payload = {
+        "id": movie.id,
+        "title": movie.title,
+        "duration_seconds": movie.duration_seconds,
+        "description": None,
+        "year": None,
+    }
+    payload.update(controller.library.metadata_for(movie.id))
+    return payload
+
+
+def _movies_payload(controller: PlaybackController) -> list:
+    return [_movie_payload(controller, movie) for movie in controller.movies]
+
+
 async def _get_movies(request: web.Request) -> web.Response:
     controller = request.app[_CONTROLLER_KEY]
-    return web.json_response([
-        {"id": movie.id, "title": movie.title, "duration_seconds": movie.duration_seconds}
-        for movie in controller.movies
-    ])
+    return web.json_response(_movies_payload(controller))
+
+
+async def _post_rescan(request: web.Request) -> web.Response:
+    """Re-scans the movies directory - probing durations and generating any
+    thumbnails that don't already exist - so files dropped onto the
+    filesystem directly (outside POST /api/movies) show up without
+    restarting the daemon."""
+    controller = request.app[_CONTROLLER_KEY]
+    controller.library.scan()
+    return web.json_response(_movies_payload(controller))
 
 
 async def _post_movie(request: web.Request) -> web.Response:
@@ -90,12 +120,12 @@ async def _post_movie(request: web.Request) -> web.Response:
     if movie is None:
         # Scanned but didn't come back with this exact title - still saved,
         # just report it generically rather than failing the upload outright.
-        return web.json_response({"id": None, "title": title, "duration_seconds": 0}, status=201)
+        return web.json_response(
+            {"id": None, "title": title, "duration_seconds": 0, "description": None, "year": None},
+            status=201,
+        )
 
-    return web.json_response(
-        {"id": movie.id, "title": movie.title, "duration_seconds": movie.duration_seconds},
-        status=201,
-    )
+    return web.json_response(_movie_payload(controller, movie), status=201)
 
 
 async def _get_thumbnail(request: web.Request) -> web.StreamResponse:
@@ -130,6 +160,41 @@ async def _post_thumbnail(request: web.Request) -> web.Response:
 
     controller.library.save_uploaded_thumbnail(movie_id, data)
     return web.json_response({"ok": True})
+
+
+async def _post_metadata(request: web.Request) -> web.Response:
+    """Accepts phone-supplied metadata (title/description/year/duration -
+    e.g. fetched from TMDB) and merges it into what's cached for this movie,
+    overriding the filename/ffprobe-derived values in GET /api/movies."""
+    controller = request.app[_CONTROLLER_KEY]
+    try:
+        movie_id = int(request.match_info["id"])
+    except ValueError:
+        return web.json_response({"error": "invalid movie id"}, status=400)
+
+    movie = next((m for m in controller.movies if m.id == movie_id), None)
+    if movie is None:
+        return web.json_response({"error": "unknown movie id"}, status=404)
+
+    payload = await request.json()
+    fields = {}
+    for key in ("title", "description"):
+        if key in payload:
+            fields[key] = str(payload[key])
+    for key in ("year", "duration_seconds"):
+        if key in payload:
+            try:
+                fields[key] = int(payload[key])
+            except (TypeError, ValueError):
+                return web.json_response({"error": f"{key} must be an integer"}, status=400)
+
+    if not fields:
+        return web.json_response(
+            {"error": f"body must include at least one of: {', '.join(_METADATA_FIELDS)}"}, status=400
+        )
+
+    controller.library.save_metadata(movie_id, **fields)
+    return web.json_response(_movie_payload(controller, movie))
 
 
 async def _get_status(request: web.Request) -> web.Response:

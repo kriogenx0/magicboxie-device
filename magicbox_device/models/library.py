@@ -1,6 +1,7 @@
 """Scans a directory of video files and exposes them via protocol.Movie."""
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 from pathlib import Path
@@ -20,16 +21,19 @@ THUMBNAIL_WIDTH = 200
 class MovieLibrary:
     def __init__(self, root: Path, thumbnail_dir: Path = DEFAULT_THUMBNAIL_DIR):
         # The movies directory is typically mounted read-only, so thumbnails
-        # are cached in a separate, writable location instead of alongside it.
+        # (and phone-supplied metadata) are cached in a separate, writable
+        # location instead of alongside it.
         self.root = root
         self._movies: List[Movie] = []
         self._paths: Dict[int, Path] = {}
         self._thumbnail_paths: Dict[int, Path] = {}
+        self._metadata: Dict[int, dict] = {}
         self._thumbnail_dir = thumbnail_dir
 
     def scan(self) -> List[Movie]:
         """Reads the movies directory from the filesystem and caches the
-        result (title, duration, thumbnail) in memory for fast lookups."""
+        result (title, duration, thumbnail, metadata) in memory for fast
+        lookups."""
         self._thumbnail_dir.mkdir(parents=True, exist_ok=True)
 
         files = sorted(
@@ -40,6 +44,7 @@ class MovieLibrary:
         movies = []
         paths = {}
         thumbnail_paths = {}
+        metadata = {}
         for index, path in enumerate(files):
             movies.append(
                 Movie(id=index, title=path.stem, duration_seconds=self._probe_duration(path))
@@ -50,9 +55,12 @@ class MovieLibrary:
             if thumbnail is not None:
                 thumbnail_paths[index] = thumbnail
 
+            metadata[index] = self._load_metadata(index)
+
         self._movies = movies
         self._paths = paths
         self._thumbnail_paths = thumbnail_paths
+        self._metadata = metadata
         logger.info("Scanned %d movie(s) in %s", len(movies), self.root)
         return movies
 
@@ -74,6 +82,31 @@ class MovieLibrary:
         thumbnail_path = self._thumbnail_dir / f"{movie_id}.jpg"
         thumbnail_path.write_bytes(data)
         self._thumbnail_paths[movie_id] = thumbnail_path
+
+    def metadata_for(self, movie_id: int) -> dict:
+        return self._metadata.get(movie_id, {})
+
+    def save_metadata(self, movie_id: int, **fields) -> dict:
+        """Merges phone-supplied metadata (e.g. title/description/year fetched
+        online) into what's cached for this movie and persists it to disk
+        alongside the thumbnail, so it survives a rescan/restart and is
+        available to any device that connects."""
+        self._thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        updated = {**self._metadata.get(movie_id, {}), **fields}
+        self._metadata[movie_id] = updated
+        metadata_path = self._thumbnail_dir / f"{movie_id}.json"
+        metadata_path.write_text(json.dumps(updated))
+        return updated
+
+    def _load_metadata(self, movie_id: int) -> dict:
+        metadata_path = self._thumbnail_dir / f"{movie_id}.json"
+        if not metadata_path.is_file():
+            return {}
+        try:
+            return json.loads(metadata_path.read_text())
+        except (OSError, ValueError) as exc:
+            logger.warning("Could not read metadata for movie %d: %s", movie_id, exc)
+            return {}
 
     @staticmethod
     def _probe_duration(path: Path) -> int:
