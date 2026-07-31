@@ -13,6 +13,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "aioresponses>=0.7",
 ]
 
 [project.scripts]

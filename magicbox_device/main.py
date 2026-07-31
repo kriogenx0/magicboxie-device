@@ -38,6 +38,14 @@ HTTP_PORT = int(os.environ.get("MAGICBOX_HTTP_PORT", "8000"))
 ADVERT_TIMEOUT_SECONDS = 180
 ADVERT_REFRESH_SECONDS = 150
 
+# The home server (MagicBox-web) this device checks in with for new content
+# when it has internet - see views/home_sync_service.py. Unset by default:
+# the device works standalone (BLE/HTTP + whatever's already on disk), this
+# is opportunistic on top of that, not a requirement.
+HOME_SERVER_URL = os.environ.get("MAGICBOX_HOME_SERVER_URL", "")
+HOME_SERVER_PASSWORD = os.environ.get("MAGICBOX_HOME_SERVER_PASSWORD", "")
+HOME_SERVER_CHECKIN_SECONDS = int(os.environ.get("MAGICBOX_HOME_SERVER_CHECKIN_SECONDS", "600"))
+
 
 def _mpv_output_args() -> List[str]:
     # Defaults target rendering straight to the framebuffer via DRM/KMS - the
@@ -89,6 +97,8 @@ async def _run() -> None:
         ]
         if TRANSPORT != "http":
             tasks.append(_run_ble(controller, stop_event))
+        if HOME_SERVER_URL:
+            tasks.append(_run_home_sync(controller, stop_event))
         await asyncio.gather(*tasks)
     finally:
         await player.stop_process()
@@ -154,6 +164,24 @@ async def _run_ble(controller: PlaybackController, stop_event: asyncio.Event) ->
                 continue
     finally:
         await service.stop_status_polling()
+
+
+async def _run_home_sync(controller: PlaybackController, stop_event: asyncio.Event) -> None:
+    """Retries a home server check-in on an interval. The device is offline
+    most of the time, so a failed attempt (no route, DNS failure, etc.) is
+    expected and just gets logged - not treated as fatal."""
+    from .views.home_sync_service import HomeServerSync
+
+    sync = HomeServerSync(controller.library, HOME_SERVER_URL, HOME_SERVER_PASSWORD)
+    while not stop_event.is_set():
+        try:
+            await sync.check_in()
+        except Exception:
+            logger.exception("Home server check-in failed unexpectedly")
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=HOME_SERVER_CHECKIN_SECONDS)
+        except asyncio.TimeoutError:
+            continue
 
 
 def run() -> None:
