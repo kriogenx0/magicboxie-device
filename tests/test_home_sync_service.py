@@ -19,27 +19,31 @@ def test_check_in_downloads_ready_movie_and_saves_metadata(tmp_path):
     sync = HomeServerSync(library, BASE_URL, "secret")
 
     with aioresponses() as mocked:
-        mocked.post(f"{BASE_URL}/api/v1/auth/login", payload={"token": "tok123"})
+        mocked.post(f"{BASE_URL}/Users/AuthenticateByName", payload={"AccessToken": "tok123"})
         mocked.get(
-            f"{BASE_URL}/api/v1/movies",
-            payload=[
-                {
-                    "id": 1,
-                    "title": "Alpha",
-                    "overview": "A movie.",
-                    "year": 1999,
-                    "duration_seconds": 123.4,
-                    "original_filename": "alpha.mkv",
-                    "status": "ready",
-                },
-                {
-                    "id": 2,
-                    "title": "Still Transcoding",
-                    "status": "needs_transcode",
-                },
-            ],
+            f"{BASE_URL}/Users/1/Items?IncludeItemTypes=Movie&Recursive=true",
+            payload={
+                "Items": [
+                    {
+                        "Id": "1",
+                        "Name": "Alpha",
+                        "Overview": "A movie.",
+                        "ProductionYear": 1999,
+                        "RunTimeTicks": 1234000000,
+                        "MagicBoxOriginalFilename": "alpha.mkv",
+                        "MagicBoxStatus": "ready",
+                    },
+                    {
+                        "Id": "2",
+                        "Name": "Still Transcoding",
+                        "MagicBoxStatus": "needs_transcode",
+                    },
+                ],
+                "TotalRecordCount": 2,
+                "StartIndex": 0,
+            },
         )
-        mocked.get(f"{BASE_URL}/api/v1/movies/1/stream", body=b"fake-video-bytes")
+        mocked.get(f"{BASE_URL}/Videos/1/stream?static=true", body=b"fake-video-bytes")
 
         asyncio.run(sync.check_in())
 
@@ -63,10 +67,21 @@ def test_check_in_skips_movie_already_present_locally(tmp_path):
     sync = HomeServerSync(library, BASE_URL, "secret")
 
     with aioresponses() as mocked:
-        mocked.post(f"{BASE_URL}/api/v1/auth/login", payload={"token": "tok123"})
+        mocked.post(f"{BASE_URL}/Users/AuthenticateByName", payload={"AccessToken": "tok123"})
         mocked.get(
-            f"{BASE_URL}/api/v1/movies",
-            payload=[{"id": 1, "title": "Alpha", "status": "ready", "original_filename": "alpha.mp4"}],
+            f"{BASE_URL}/Users/1/Items?IncludeItemTypes=Movie&Recursive=true",
+            payload={
+                "Items": [
+                    {
+                        "Id": "1",
+                        "Name": "Alpha",
+                        "MagicBoxStatus": "ready",
+                        "MagicBoxOriginalFilename": "alpha.mp4",
+                    }
+                ],
+                "TotalRecordCount": 1,
+                "StartIndex": 0,
+            },
         )
         # No /stream mock registered - if the code tries to download despite
         # the movie already being local, aioresponses raises for the
@@ -81,8 +96,8 @@ def test_check_in_does_nothing_when_login_fails(tmp_path):
     sync = HomeServerSync(library, BASE_URL, "wrong-password")
 
     with aioresponses() as mocked:
-        mocked.post(f"{BASE_URL}/api/v1/auth/login", status=401, payload={"error": "invalid password"})
-        # No /movies mock registered - a login failure must stop check_in()
+        mocked.post(f"{BASE_URL}/Users/AuthenticateByName", status=401, payload={"error": "invalid password"})
+        # No /Items mock registered - a login failure must stop check_in()
         # before it lists movies, or aioresponses raises for the unmatched call.
         asyncio.run(sync.check_in())
 
@@ -94,8 +109,8 @@ def test_check_in_handles_unreachable_movies_list(tmp_path):
     sync = HomeServerSync(library, BASE_URL, "secret")
 
     with aioresponses() as mocked:
-        mocked.post(f"{BASE_URL}/api/v1/auth/login", payload={"token": "tok123"})
-        mocked.get(f"{BASE_URL}/api/v1/movies", status=500)
+        mocked.post(f"{BASE_URL}/Users/AuthenticateByName", payload={"AccessToken": "tok123"})
+        mocked.get(f"{BASE_URL}/Users/1/Items?IncludeItemTypes=Movie&Recursive=true", status=500)
         asyncio.run(sync.check_in())
 
     assert library.movies == []
