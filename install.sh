@@ -4,7 +4,7 @@
 # this is meant to be curled and run once, while it does have internet
 # (e.g. over SSH on the home WiFi during initial setup):
 #
-#   curl -fsSL https://raw.githubusercontent.com/kriogenx0/magicboxie-device/main/install.sh | sh
+#   curl -fsSL https://d.magicboxie.com | sh
 #
 # It just clones/updates the repo and hands off to `make pi-install`, which
 # does the real work (system packages, venv, systemd service) - see the

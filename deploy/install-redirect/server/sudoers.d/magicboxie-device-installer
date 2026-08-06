@@ -1,0 +1,8 @@
+# Narrow grant for deploying the d.magicboxie.com redirect vhost and certificate.
+# Install once as an administrator:
+#   scp deploy/install-redirect/server/sudoers.d/magicboxie-device-installer admin@104.131.183.186:/tmp/
+#   ssh admin@104.131.183.186 'sudo visudo -c -f /tmp/magicboxie-device-installer && sudo install -m 0440 -o root -g root /tmp/magicboxie-device-installer /etc/sudoers.d/magicboxie-device-installer && rm /tmp/magicboxie-device-installer'
+deploy ALL=(root) NOPASSWD: \
+  /bin/cp /tmp/d.magicboxie.com.conf /etc/nginx/sites-available/d.magicboxie.com, \
+  /bin/cp /tmp/d.magicboxie.com.bootstrap.conf /etc/nginx/sites-available/d.magicboxie.com, \
+  /usr/bin/certbot certonly --webroot -w /var/www/certbot -d d.magicboxie.com --non-interactive --agree-tos -m simplex0@gmail.com
