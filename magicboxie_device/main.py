@@ -24,34 +24,34 @@ from .models.player import MpvController
 
 logger = logging.getLogger(__name__)
 
-DEVICE_NAME = os.environ.get("MAGICBOX_DEVICE_NAME", "MagicBox")
-MOVIES_DIR = Path(os.environ.get("MAGICBOX_MOVIES_DIR", "/movies"))
-THUMBNAIL_DIR = Path(os.environ.get("MAGICBOX_THUMBNAIL_DIR", "/var/lib/magicbox/thumbnails"))
+DEVICE_NAME = os.environ.get("MAGICBOXIE_DEVICE_NAME", "MagicBoxie")
+MOVIES_DIR = Path(os.environ.get("MAGICBOXIE_MOVIES_DIR", "/movies"))
+THUMBNAIL_DIR = Path(os.environ.get("MAGICBOXIE_THUMBNAIL_DIR", "/var/lib/magicboxie/thumbnails"))
 
 # "ble" (default, real device) or "http" (dev/testing - no Bluetooth required,
 # e.g. when there's no BlueZ available such as Docker Desktop on macOS).
-TRANSPORT = os.environ.get("MAGICBOX_TRANSPORT", "ble")
-HTTP_PORT = int(os.environ.get("MAGICBOX_HTTP_PORT", "8000"))
+TRANSPORT = os.environ.get("MAGICBOXIE_TRANSPORT", "ble")
+HTTP_PORT = int(os.environ.get("MAGICBOXIE_HTTP_PORT", "8000"))
 
 # bluez expires an advert after its Timeout elapses; re-registering periodically
 # (well before that) keeps the device discoverable indefinitely.
 ADVERT_TIMEOUT_SECONDS = 180
 ADVERT_REFRESH_SECONDS = 150
 
-# The home server (MagicBox-web) this device checks in with for new content
+# The home server (MagicBoxie-web) this device checks in with for new content
 # when it has internet - see views/home_sync_service.py. Unset by default:
 # the device works standalone (BLE/HTTP + whatever's already on disk), this
 # is opportunistic on top of that, not a requirement.
-HOME_SERVER_URL = os.environ.get("MAGICBOX_HOME_SERVER_URL", "")
-HOME_SERVER_PASSWORD = os.environ.get("MAGICBOX_HOME_SERVER_PASSWORD", "")
-HOME_SERVER_CHECKIN_SECONDS = int(os.environ.get("MAGICBOX_HOME_SERVER_CHECKIN_SECONDS", "600"))
+HOME_SERVER_URL = os.environ.get("MAGICBOXIE_HOME_SERVER_URL", "")
+HOME_SERVER_PASSWORD = os.environ.get("MAGICBOXIE_HOME_SERVER_PASSWORD", "")
+HOME_SERVER_CHECKIN_SECONDS = int(os.environ.get("MAGICBOXIE_HOME_SERVER_CHECKIN_SECONDS", "600"))
 
 
 def _mpv_output_args() -> List[str]:
     # Defaults target rendering straight to the framebuffer via DRM/KMS - the
     # Pi's own HDMI output, with no desktop environment running.
-    # Override with MAGICBOX_MPV_ARGS if your hardware needs a different --vo/--gpu-context.
-    raw = os.environ.get("MAGICBOX_MPV_ARGS", "--vo=gpu --gpu-context=drm")
+    # Override with MAGICBOXIE_MPV_ARGS if your hardware needs a different --vo/--gpu-context.
+    raw = os.environ.get("MAGICBOXIE_MPV_ARGS", "--vo=gpu --gpu-context=drm")
     return raw.split()
 
 
@@ -114,7 +114,7 @@ async def _run_http(controller: PlaybackController, stop_event: asyncio.Event) -
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", HTTP_PORT)
     await site.start()
-    logger.info("Serving MagicBox web API on port %d", HTTP_PORT)
+    logger.info("Serving MagicBoxie web API on port %d", HTTP_PORT)
 
     await stop_event.wait()
     await runner.cleanup()
@@ -135,10 +135,10 @@ async def _run_ble(controller: PlaybackController, stop_event: asyncio.Event) ->
     from bluez_peripheral.util import Adapter, get_message_bus
 
     from .models import protocol
-    from .views.ble_service import MagicBoxService
+    from .views.ble_service import MagicBoxieService
 
     network_url = f"http://{_local_ip()}:{HTTP_PORT}"
-    service = MagicBoxService(controller, network_url)
+    service = MagicBoxieService(controller, network_url)
 
     bus = await get_message_bus()
     await service.register(bus)

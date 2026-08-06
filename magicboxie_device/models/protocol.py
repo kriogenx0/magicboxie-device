@@ -1,4 +1,4 @@
-"""Wire format shared with the MagicBox iOS app's MediaControlProtocol.swift.
+"""Wire format shared with the MagicBoxie iOS app's MediaControlProtocol.swift.
 
 Any change here must be mirrored there, and vice versa - the two sides only
 agree on how to interpret bytes because both encode/decode identically.

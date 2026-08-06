@@ -1,8 +1,8 @@
-# Template for /etc/systemd/system/magicbox-device.service - installed and
+# Template for /etc/systemd/system/magicboxie-device.service - installed and
 # filled in by `make pi-service` (placeholders substituted with sed).
 # Runs the daemon natively on the Pi: BLE + HDMI/DRM output, no Docker.
 [Unit]
-Description=MagicBox device daemon
+Description=MagicBoxie device daemon
 After=bluetooth.target network.target dbus.service
 Wants=bluetooth.target
 
@@ -10,11 +10,11 @@ Wants=bluetooth.target
 Type=simple
 User=@USER@
 WorkingDirectory=@REPO_DIR@
-Environment=MAGICBOX_TRANSPORT=ble
-Environment=MAGICBOX_DEVICE_NAME=MagicBox
-Environment=MAGICBOX_MOVIES_DIR=@MOVIES_DIR@
-Environment=MAGICBOX_THUMBNAIL_DIR=@THUMBNAIL_DIR@
-ExecStart=@REPO_DIR@/.venv/bin/magicbox-device
+Environment=MAGICBOXIE_TRANSPORT=ble
+Environment=MAGICBOXIE_DEVICE_NAME=MagicBoxie
+Environment=MAGICBOXIE_MOVIES_DIR=@MOVIES_DIR@
+Environment=MAGICBOXIE_THUMBNAIL_DIR=@THUMBNAIL_DIR@
+ExecStart=@REPO_DIR@/.venv/bin/magicboxie-device
 Restart=on-failure
 RestartSec=2
 

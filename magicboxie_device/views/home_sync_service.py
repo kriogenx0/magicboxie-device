@@ -1,13 +1,13 @@
-"""Opportunistic sync with the home server (MagicBox-web): when the device
+"""Opportunistic sync with the home server (MagicBoxie-web): when the device
 has internet, downloads any "ready" movies it doesn't have locally yet,
 along with their metadata (title/description/year/duration). The device
 spends most of its life offline, so a failed check-in (server unreachable,
 DNS failure, etc.) is the normal case, not an error - see _run_home_sync in
 main.py, which retries on an interval and just logs and moves on.
 
-MagicBox-web speaks the real Jellyfin REST API (see its
+MagicBoxie-web speaks the real Jellyfin REST API (see its
 internal/controllers/items_controller.go) plus a handful of additive
-"MagicBox*"-prefixed fields real Jellyfin clients don't have -- status,
+"MagicBoxie*"-prefixed fields real Jellyfin clients don't have -- status,
 progress, and original filename -- which this sync relies on to decide
 what's actually downloadable and how to name the local file.
 
@@ -17,6 +17,7 @@ MovieLibrary.scan() grabs a frame from it with ffmpeg like any other movie.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import List
 
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 _REQUEST_TIMEOUT_SECONDS = 10
 _DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 _READY_STATUS = "ready"
-_USER_ID = "1"  # MagicBox-web has one shared login, not per-user accounts
+_USER_ID = "1"  # MagicBoxie-web has one shared login, not per-user accounts
 _TICKS_PER_SECOND = 10_000_000  # Jellyfin's RunTimeTicks unit is 100ns
 
 
@@ -38,16 +39,12 @@ class HomeServerSync:
         self._library = library
         self._base_url = base_url.rstrip("/")
         self._password = password
+        self._device_id = self._read_device_identifier()
 
     async def check_in(self) -> None:
         async with aiohttp.ClientSession() as session:
-            token = await self._authenticate(session)
-            if token is None:
-                return
-            headers = {"Authorization": f"Bearer {token}"}
-
             try:
-                remote_movies = await self._list_ready_movies(session, headers)
+                remote_movies = await self._register_and_list_movies(session)
             except (aiohttp.ClientError, TimeoutError) as exc:
                 logger.info("Home server check-in: couldn't list movies (%s)", exc)
                 return
@@ -60,7 +57,7 @@ class HomeServerSync:
 
             logger.info("Home server check-in: downloading %d new movie(s)", len(to_download))
             downloaded = [
-                movie for movie in to_download if await self._download_movie(session, headers, movie)
+                movie for movie in to_download if await self._download_movie(session, movie)
             ]
             if not downloaded:
                 return
@@ -69,11 +66,32 @@ class HomeServerSync:
             for remote_movie in downloaded:
                 self._save_metadata(remote_movie)
 
+    async def _register_and_list_movies(self, session: aiohttp.ClientSession) -> List[dict]:
+        try:
+            async with session.post(
+                f"{self._base_url}/devices/register",
+                json={"device_id": self._device_id},
+                timeout=aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_SECONDS),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    items = data.get("items") or data.get("Items") or []
+                    return [self._normalize_registered_movie(item) for item in items]
+                logger.info("Home server check-in: registration endpoint responded HTTP %d", resp.status)
+        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+            logger.info("Home server check-in: registration endpoint unavailable (%s)", exc)
+
+        token = await self._authenticate(session)
+        if token is None:
+            return []
+        headers = {"Authorization": f"Bearer {token}"}
+        return await self._list_ready_movies(session, headers)
+
     async def _authenticate(self, session: aiohttp.ClientSession):
         try:
             async with session.post(
                 f"{self._base_url}/Users/AuthenticateByName",
-                json={"Username": "magicbox-device", "Pw": self._password},
+                json={"Username": "magicboxie-device", "Pw": self._password},
                 timeout=aiohttp.ClientTimeout(total=_REQUEST_TIMEOUT_SECONDS),
             ) as resp:
                 if resp.status != 200:
@@ -95,9 +113,9 @@ class HomeServerSync:
             resp.raise_for_status()
             data = await resp.json()
         items = data.get("Items", [])
-        return [item for item in items if item.get("MagicBoxStatus") == _READY_STATUS]
+        return [item for item in items if item.get("MagicBoxieStatus") == _READY_STATUS]
 
-    async def _download_movie(self, session: aiohttp.ClientSession, headers: dict, movie: dict) -> bool:
+    async def _download_movie(self, session: aiohttp.ClientSession, movie: dict) -> bool:
         dest_path = self._library.root / self._local_filename(movie)
         if dest_path.exists():
             return False
@@ -107,7 +125,6 @@ class HomeServerSync:
             async with session.get(
                 f"{self._base_url}/Videos/{movie['Id']}/stream",
                 params={"static": "true"},
-                headers=headers,
                 timeout=aiohttp.ClientTimeout(total=None),
             ) as resp:
                 if resp.status != 200:
@@ -137,8 +154,51 @@ class HomeServerSync:
         )
 
     @staticmethod
+    def _normalize_registered_movie(movie: dict) -> dict:
+        return {
+            "Id": movie.get("Id") or movie.get("id"),
+            "Name": movie.get("Name") or movie.get("name"),
+            "Overview": movie.get("Overview") or movie.get("description") or "",
+            "ProductionYear": movie.get("ProductionYear") or movie.get("year") or 0,
+            "RunTimeTicks": movie.get("RunTimeTicks") or movie.get("duration_seconds", 0) * _TICKS_PER_SECOND,
+            "MagicBoxieOriginalFilename": movie.get("MagicBoxieOriginalFilename") or movie.get("filename") or "",
+            "MagicBoxieStatus": movie.get("MagicBoxieStatus") or movie.get("status") or _READY_STATUS,
+        }
+
+    @staticmethod
+    def _read_device_identifier() -> str:
+        override = os.environ.get("MAGICBOXIE_DEVICE_ID")
+        if override:
+            return override
+
+        serial_path = Path("/sys/firmware/devicetree/base/serial-number")
+        if serial_path.exists():
+            try:
+                return serial_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                pass
+
+        cpuinfo_path = Path("/proc/cpuinfo")
+        if cpuinfo_path.exists():
+            try:
+                for line in cpuinfo_path.read_text(encoding="utf-8").splitlines():
+                    if line.startswith("Serial"):
+                        return line.split(":", 1)[1].strip()
+            except OSError:
+                pass
+
+        machine_id_path = Path("/etc/machine-id")
+        if machine_id_path.exists():
+            try:
+                return machine_id_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                pass
+
+        return "unknown-device"
+
+    @staticmethod
     def _local_filename(movie: dict) -> str:
-        original = Path(movie.get("MagicBoxOriginalFilename") or "")
+        original = Path(movie.get("MagicBoxieOriginalFilename") or "")
         extension = original.suffix.lower() if original.suffix.lower() in VIDEO_EXTENSIONS else ".mp4"
         # Titles come from the home server's own TMDB matching/filename
         # parsing and may contain "/" (e.g. "Fast/Furious") - not valid in a

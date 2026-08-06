@@ -1,6 +1,6 @@
 from PIL import Image
 
-from magicbox_device.models.idle_screen import render_idle_screen
+from magicboxie_device.models.idle_screen import render_idle_screen
 
 from fakes import FakeLibrary
 

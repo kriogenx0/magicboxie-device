@@ -1,4 +1,4 @@
-from magicbox_device.models.library import MovieLibrary
+from magicboxie_device.models.library import MovieLibrary
 
 
 def test_save_uploaded_thumbnail_overwrites_cache(tmp_path):

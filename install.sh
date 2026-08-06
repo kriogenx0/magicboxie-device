@@ -1,19 +1,19 @@
 #!/bin/sh
-# Bootstraps a MagicBox device on a fresh Raspberry Pi. Since the Pi has no
+# Bootstraps a MagicBoxie device on a fresh Raspberry Pi. Since the Pi has no
 # other easy way to get files onto it and isn't online most of the time,
 # this is meant to be curled and run once, while it does have internet
 # (e.g. over SSH on the home WiFi during initial setup):
 #
-#   curl -fsSL https://raw.githubusercontent.com/kriogenx0/mediabox-device/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/kriogenx0/magicboxie-device/main/install.sh | sh
 #
 # It just clones/updates the repo and hands off to `make pi-install`, which
 # does the real work (system packages, venv, systemd service) - see the
 # "Raspberry Pi (native, no Docker)" section of the Makefile.
 set -eu
 
-REPO_URL="https://github.com/kriogenx0/mediabox-device.git"
-REPO_REF="${MAGICBOX_REF:-main}"
-INSTALL_DIR="${MAGICBOX_INSTALL_DIR:-$HOME/mediabox-device}"
+REPO_URL="https://github.com/kriogenx0/magicboxie-device.git"
+REPO_REF="${MAGICBOXIE_REF:-main}"
+INSTALL_DIR="${MAGICBOXIE_INSTALL_DIR:-$HOME/magicboxie-device}"
 
 if ! command -v git >/dev/null 2>&1; then
     echo "git not found - installing..."

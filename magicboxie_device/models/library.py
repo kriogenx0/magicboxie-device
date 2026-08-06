@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".m4v"}
 
-DEFAULT_THUMBNAIL_DIR = Path("/var/lib/magicbox/thumbnails")
+DEFAULT_THUMBNAIL_DIR = Path("/var/lib/magicboxie/thumbnails")
 THUMBNAIL_TIMESTAMP_SECONDS = 60
 THUMBNAIL_WIDTH = 200
 

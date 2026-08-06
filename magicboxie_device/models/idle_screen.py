@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw
 
 from .library import MovieLibrary
 
-IDLE_SCREEN_PATH = Path("/tmp/magicbox-idle-screen.png")
+IDLE_SCREEN_PATH = Path("/tmp/magicboxie-idle-screen.png")
 
 _COLUMNS = 4
 _THUMBNAIL_MAX_SIZE = (260, 180)

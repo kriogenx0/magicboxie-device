@@ -2,8 +2,8 @@ import asyncio
 
 from aioresponses import aioresponses
 
-from magicbox_device.models.library import MovieLibrary
-from magicbox_device.views.home_sync_service import HomeServerSync
+from magicboxie_device.models.library import MovieLibrary
+from magicboxie_device.views.home_sync_service import HomeServerSync
 
 BASE_URL = "http://home.example.com:8080"
 
@@ -30,13 +30,13 @@ def test_check_in_downloads_ready_movie_and_saves_metadata(tmp_path):
                         "Overview": "A movie.",
                         "ProductionYear": 1999,
                         "RunTimeTicks": 1234000000,
-                        "MagicBoxOriginalFilename": "alpha.mkv",
-                        "MagicBoxStatus": "ready",
+                        "MagicBoxieOriginalFilename": "alpha.mkv",
+                        "MagicBoxieStatus": "ready",
                     },
                     {
                         "Id": "2",
                         "Name": "Still Transcoding",
-                        "MagicBoxStatus": "needs_transcode",
+                        "MagicBoxieStatus": "needs_transcode",
                     },
                 ],
                 "TotalRecordCount": 2,
@@ -75,8 +75,8 @@ def test_check_in_skips_movie_already_present_locally(tmp_path):
                     {
                         "Id": "1",
                         "Name": "Alpha",
-                        "MagicBoxStatus": "ready",
-                        "MagicBoxOriginalFilename": "alpha.mp4",
+                        "MagicBoxieStatus": "ready",
+                        "MagicBoxieOriginalFilename": "alpha.mp4",
                     }
                 ],
                 "TotalRecordCount": 1,
@@ -89,6 +89,41 @@ def test_check_in_skips_movie_already_present_locally(tmp_path):
         asyncio.run(sync.check_in())
 
     assert (tmp_path / "movies" / "Alpha.mp4").read_bytes() == b"already-here"
+
+
+def test_check_in_registers_and_downloads_content_when_available(tmp_path):
+    library = _library(tmp_path)
+    sync = HomeServerSync(library, "https://magicboxie.com", "secret")
+
+    with aioresponses() as mocked:
+        mocked.post(
+            "https://magicboxie.com/devices/register",
+            payload={
+                "items": [
+                    {
+                        "Id": "1",
+                        "Name": "Beta",
+                        "Overview": "A registered movie.",
+                        "ProductionYear": 2001,
+                        "RunTimeTicks": 987654321,
+                        "MagicBoxieOriginalFilename": "beta.mkv",
+                        "MagicBoxieStatus": "ready",
+                    }
+                ]
+            },
+        )
+        mocked.get("https://magicboxie.com/Videos/1/stream?static=true", body=b"registered-video-bytes")
+
+        asyncio.run(sync.check_in())
+
+    assert (tmp_path / "movies" / "Beta.mkv").read_bytes() == b"registered-video-bytes"
+    movie = library.movies[0]
+    assert library.metadata_for(movie.id) == {
+        "title": "Beta",
+        "description": "A registered movie.",
+        "year": 2001,
+        "duration_seconds": 98,
+    }
 
 
 def test_check_in_does_nothing_when_login_fails(tmp_path):

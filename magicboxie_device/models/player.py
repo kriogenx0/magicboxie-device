@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class MpvController:
-    def __init__(self, socket_path: str = "/tmp/magicbox-mpv.sock", extra_args: Optional[List[str]] = None):
+    def __init__(self, socket_path: str = "/tmp/magicboxie-mpv.sock", extra_args: Optional[List[str]] = None):
         self._socket_path = socket_path
         self._extra_args = extra_args or []
         self._process: Optional[asyncio.subprocess.Process] = None

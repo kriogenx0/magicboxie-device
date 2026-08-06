@@ -16,14 +16,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY pyproject.toml ./
-COPY magicbox_device ./magicbox_device
+COPY magicboxie_device ./magicboxie_device
 RUN pip install --no-cache-dir .
 
-ENV MAGICBOX_MOVIES_DIR=/movies
-ENV MAGICBOX_DEVICE_NAME=MagicBox
+ENV MAGICBOXIE_MOVIES_DIR=/movies
+ENV MAGICBOXIE_DEVICE_NAME=MagicBoxie
 EXPOSE 8000
 
-ENTRYPOINT ["magicbox-device"]
+ENTRYPOINT ["magicboxie-device"]
 
 # `make test` / `docker build --target test`: runs the suite inside the same
 # environment the app ships in, so `make` never depends on a local Python.

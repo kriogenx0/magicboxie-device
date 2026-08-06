@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 STATUS_POLL_INTERVAL_SECONDS = 1.0
 
 
-class MagicBoxService(Service):
+class MagicBoxieService(Service):
     def __init__(self, controller: PlaybackController, network_url: str):
         super().__init__(protocol.SERVICE_UUID, True)
         self._controller = controller

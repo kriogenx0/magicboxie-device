@@ -1,5 +1,5 @@
 services:
-  magicbox-device:
+  magicboxie-device:
     build:
       context: .
       target: base  # the Dockerfile's `test` stage is defined after `base`, so this must be explicit
@@ -15,18 +15,18 @@ services:
       - /var/run/dbus:/var/run/dbus
       # Writable now (was :ro) - POST /movies (shared-into-the-app uploads
       # from iOS) needs to write new files into this directory.
-      - ${MAGICBOX_MOVIES_DIR:-./movies}:/movies
-      - thumbnails:/var/lib/magicbox/thumbnails
+      - ${MAGICBOXIE_MOVIES_DIR:-./movies}:/movies
+      - thumbnails:/var/lib/magicboxie/thumbnails
     environment:
-      MAGICBOX_DEVICE_NAME: ${MAGICBOX_DEVICE_NAME:-MagicBox}
+      MAGICBOXIE_DEVICE_NAME: ${MAGICBOXIE_DEVICE_NAME:-MagicBoxie}
       # "http" here by default since there's no BlueZ on macOS/Docker Desktop -
       # this compose file is what you run for local dev. Set to "ble" (e.g. a
-      # .env file or `MAGICBOX_TRANSPORT=ble docker compose up`) on the real
+      # .env file or `MAGICBOXIE_TRANSPORT=ble docker compose up`) on the real
       # Pi deployment to get the actual BLE GATT service.
-      MAGICBOX_TRANSPORT: ${MAGICBOX_TRANSPORT:-http}
+      MAGICBOXIE_TRANSPORT: ${MAGICBOXIE_TRANSPORT:-http}
       # Uncomment to override the default `--vo=gpu --gpu-context=drm` mpv output
       # args baked into the image (e.g. to pin a specific --drm-connector).
-      # MAGICBOX_MPV_ARGS: "--vo=gpu --gpu-context=drm --drm-connector=HDMI-A-1"
+      # MAGICBOXIE_MPV_ARGS: "--vo=gpu --gpu-context=drm --drm-connector=HDMI-A-1"
 
 volumes:
   thumbnails:

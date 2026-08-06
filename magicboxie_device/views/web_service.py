@@ -1,6 +1,6 @@
 """Plain HTTP transport for dev/testing without Bluetooth.
 
-Enable with MAGICBOX_TRANSPORT=http (see main.py). Mirrors the same
+Enable with MAGICBOXIE_TRANSPORT=http (see main.py). Mirrors the same
 PlaybackController the BLE GATT service uses, just over JSON/REST instead of
 GATT characteristics - useful when there's no BlueZ available (e.g. running
 in Docker Desktop on macOS) or no BLE-capable client at hand.
