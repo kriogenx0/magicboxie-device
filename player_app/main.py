@@ -1,12 +1,13 @@
 """Entrypoint: wires the movie library, mpv, and the transports together.
 
-Production ("ble") mode runs both the BLE GATT service and the HTTP web
-service concurrently: BLE is what the app uses to discover the device and
-for control, but its tiny ATT payloads are a poor fit for bulk data (movie
-library, thumbnails), so the app reads the device's own HTTP address off a
-BLE characteristic and offers to switch to WiFi for those. "http" mode
+Production ("ble") mode runs the BLE GATT service, the HTTP web service, and
+an mDNS advertisement of that HTTP service concurrently: BLE is what the app
+uses for control (and is a fallback for discovering the device's WiFi address
+when mDNS multicast doesn't reach it), but BLE's tiny ATT payloads are a poor
+fit for bulk data (movie library, thumbnails), so the app also discovers the
+device directly over WiFi via mDNS and uses that for those. "http" mode
 (dev/testing - no Bluetooth required, e.g. no BlueZ on Docker Desktop/macOS)
-runs the HTTP service alone.
+runs the HTTP service and mDNS advertisement alone, without BLE.
 """
 from __future__ import annotations
 
@@ -94,6 +95,7 @@ async def _run() -> None:
         tasks = [
             _run_http(controller, stop_event),
             _run_keyboard(controller, stop_event),
+            _run_mdns(stop_event),
         ]
         if TRANSPORT != "http":
             tasks.append(_run_ble(controller, stop_event))
@@ -118,6 +120,19 @@ async def _run_http(controller: PlaybackController, stop_event: asyncio.Event) -
 
     await stop_event.wait()
     await runner.cleanup()
+
+
+async def _run_mdns(stop_event: asyncio.Event) -> None:
+    """Advertises the HTTP API over mDNS/Bonjour so the app can find this
+    device on the local WiFi network without needing a BLE connection first."""
+    from .views.mdns_service import MdnsAdvertiser
+
+    advertiser = MdnsAdvertiser(DEVICE_NAME, _local_ip(), HTTP_PORT)
+    await advertiser.start()
+    try:
+        await stop_event.wait()
+    finally:
+        await advertiser.stop()
 
 
 async def _run_keyboard(controller: PlaybackController, stop_event: asyncio.Event) -> None:

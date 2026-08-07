@@ -8,6 +8,7 @@ dependencies = [
     "aiohttp>=3.9",
     "Pillow>=10.0",
     "evdev>=1.6",
+    "zeroconf>=0.132",
 ]
 
 [project.optional-dependencies]
