@@ -1,7 +1,7 @@
 """Fakes for testing PlaybackController/transports without real mpv or BlueZ."""
 from pathlib import Path
 
-from magicboxie_device.models.protocol import Movie
+from player_app.models.protocol import Movie
 
 
 class FakeMpv:

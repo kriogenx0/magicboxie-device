@@ -2,8 +2,8 @@ import asyncio
 
 from fakes import FakeLibrary, FakeMpv
 
-from magicboxie_device.controllers.playback_controller import PlaybackController
-from magicboxie_device.models.protocol import Command, Opcode, PlaybackStatus
+from player_app.controllers.playback_controller import PlaybackController
+from player_app.models.protocol import Command, Opcode, PlaybackStatus
 
 
 def test_select_and_play_updates_status():

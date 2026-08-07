@@ -3,9 +3,9 @@ import asyncio
 from aiohttp.test_utils import TestClient, TestServer
 from fakes import FakeLibrary, FakeMpv
 
-from magicboxie_device.controllers.playback_controller import PlaybackController
-from magicboxie_device.models.library import MovieLibrary
-from magicboxie_device.views.web_service import create_app
+from player_app.controllers.playback_controller import PlaybackController
+from player_app.models.library import MovieLibrary
+from player_app.views.web_service import create_app
 
 
 async def _make_client(library=None):

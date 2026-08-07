@@ -13,7 +13,7 @@ SERVICE_FILE := /etc/systemd/system/$(SERVICE_NAME).service
 	pi-install pi-setup pi-seed-movies pi-run pi-test pi-service pi-start pi-stop \
 	pi-restart pi-redeploy pi-logs pi-uninstall pi-clean
 
-all: setup dev
+all: dev
 
 # --- Docker dev (Mac/other non-Pi machines) -------------------------------
 # These targets build/run in Docker for local development off the Pi. For
@@ -49,8 +49,7 @@ seed-movies:
 # container from the freshly built image automatically, so there's nothing to
 # manually delete between runs.
 dev: seed-movies
-	docker compose up -d --build
-	docker compose logs -f
+	docker compose up --build
 
 # Production image build.
 build:

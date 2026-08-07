@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY pyproject.toml ./
-COPY magicboxie_device ./magicboxie_device
+COPY player_app ./player_app
 RUN pip install --no-cache-dir .
 
 ENV MAGICBOXIE_MOVIES_DIR=/movies

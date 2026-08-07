@@ -1,5 +1,5 @@
-from magicboxie_device.models import protocol
-from magicboxie_device.models.protocol import (
+from player_app.models import protocol
+from player_app.models.protocol import (
     Command,
     Movie,
     Opcode,

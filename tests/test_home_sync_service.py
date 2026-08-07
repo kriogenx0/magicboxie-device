@@ -2,8 +2,8 @@ import asyncio
 
 from aioresponses import aioresponses
 
-from magicboxie_device.models.library import MovieLibrary
-from magicboxie_device.views.home_sync_service import HomeServerSync
+from player_app.models.library import MovieLibrary
+from player_app.views.home_sync_service import HomeServerSync
 
 BASE_URL = "http://home.example.com:8080"
 
