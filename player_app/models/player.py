@@ -10,6 +10,16 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# How long to wait for mpv to create its IPC socket before giving up. Was
+# 5s, which turned out too tight under real-world load: DRM/KMS
+# initialization on a Pi Zero W can legitimately take upwards of 15s (e.g.
+# right after a reboot or a burst of other activity, like a systemd restart
+# storm - a slow startup that trips this timeout kills the whole daemon,
+# which then immediately retries and adds more load, making the next
+# startup even slower). Confirmed via a manual run that mpv itself starts
+# cleanly - it just needed more time, not a different invocation.
+MPV_STARTUP_TIMEOUT_SECONDS = 30
+
 
 class MpvController:
     def __init__(self, socket_path: str = "/tmp/magicboxie-mpv.sock", extra_args: Optional[List[str]] = None):
@@ -45,7 +55,7 @@ class MpvController:
         )
         self._stderr_task = asyncio.create_task(self._log_stderr())
 
-        for _ in range(50):  # wait up to ~5s for mpv to create the socket
+        for _ in range(MPV_STARTUP_TIMEOUT_SECONDS * 10):
             if socket_path.exists():
                 break
             if self._process.returncode is not None:
