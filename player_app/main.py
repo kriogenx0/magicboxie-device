@@ -39,6 +39,10 @@ HTTP_PORT = int(os.environ.get("MAGICBOXIE_HTTP_PORT", "8000"))
 ADVERT_TIMEOUT_SECONDS = 180
 ADVERT_REFRESH_SECONDS = 150
 
+# How long to wait before retrying BLE setup after it fails (e.g. BlueZ not
+# having registered its adapter over D-Bus yet at boot).
+BLE_RETRY_SECONDS = 5
+
 # The home server (MagicBoxie-web) this device checks in with for new content
 # when it has internet - see views/home_sync_service.py. Unset by default:
 # the device works standalone (BLE/HTTP + whatever's already on disk), this
@@ -145,6 +149,27 @@ async def _run_keyboard(controller: PlaybackController, stop_event: asyncio.Even
 
 
 async def _run_ble(controller: PlaybackController, stop_event: asyncio.Event) -> None:
+    """Retries the whole BLE setup/advertise cycle on any failure, rather than
+    letting one propagate up to the `asyncio.gather` in `_run()` and take
+    down HTTP/mDNS with it. This matters at boot in particular: this unit's
+    `After=`/`Wants=bluetooth.target` orders us after bluetooth.service
+    *starts*, not after BlueZ has actually enumerated hci0 and registered its
+    org.bluez.Adapter1 D-Bus object, so `Adapter.get_first` can legitimately
+    fail for the first few seconds - that's transient, not fatal, and BLE is
+    meant to be a resilient fallback control path, not a single-shot one.
+    """
+    while not stop_event.is_set():
+        try:
+            await _run_ble_once(controller, stop_event)
+        except Exception:
+            logger.exception("BLE service failed - retrying in %ds", BLE_RETRY_SECONDS)
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=BLE_RETRY_SECONDS)
+            except asyncio.TimeoutError:
+                continue
+
+
+async def _run_ble_once(controller: PlaybackController, stop_event: asyncio.Event) -> None:
     from bluez_peripheral.advert import Advertisement
     from bluez_peripheral.agent import NoIoAgent
     from bluez_peripheral.util import Adapter, get_message_bus
