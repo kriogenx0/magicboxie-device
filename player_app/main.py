@@ -200,14 +200,19 @@ async def _run_ble_once(controller: PlaybackController, stop_event: asyncio.Even
     service = MagicBoxieService(controller, network_url)
 
     bus = await get_message_bus()
-    await service.register(bus)
+
+    # Resolved ourselves (see _first_bluez_adapter) and passed in explicitly -
+    # service.register()'s own default (adapter=None) falls back to bluez_peripheral's
+    # buggy Adapter.get_first(), which would blow up here exactly as it does
+    # for us below without this.
+    adapter = await _first_bluez_adapter(bus)
+    await service.register(bus, adapter=adapter)
 
     # Required for bluez to complete pairing requests; "no IO" since this
     # device has no screen/keyboard of its own to confirm a passkey with.
     agent = NoIoAgent()
     await agent.register(bus)
 
-    adapter = await _first_bluez_adapter(bus)
     await adapter.set_alias(DEVICE_NAME)
 
     service.start_status_polling()
