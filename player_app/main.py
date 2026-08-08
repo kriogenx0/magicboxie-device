@@ -151,12 +151,9 @@ async def _run_keyboard(controller: PlaybackController, stop_event: asyncio.Even
 async def _run_ble(controller: PlaybackController, stop_event: asyncio.Event) -> None:
     """Retries the whole BLE setup/advertise cycle on any failure, rather than
     letting one propagate up to the `asyncio.gather` in `_run()` and take
-    down HTTP/mDNS with it. This matters at boot in particular: this unit's
-    `After=`/`Wants=bluetooth.target` orders us after bluetooth.service
-    *starts*, not after BlueZ has actually enumerated hci0 and registered its
-    org.bluez.Adapter1 D-Bus object, so `Adapter.get_first` can legitimately
-    fail for the first few seconds - that's transient, not fatal, and BLE is
-    meant to be a resilient fallback control path, not a single-shot one.
+    down HTTP/mDNS with it - BLE is meant to be a resilient fallback control
+    path, not a single-shot one, so a D-Bus hiccup or bluetoothd restarting
+    should self-heal rather than take the whole daemon down with it.
     """
     while not stop_event.is_set():
         try:
@@ -169,10 +166,32 @@ async def _run_ble(controller: PlaybackController, stop_event: asyncio.Event) ->
                 continue
 
 
+async def _first_bluez_adapter(bus):
+    """bluez_peripheral.util.Adapter.get_first()/get_all() assume every child
+    node under /org/bluez is an adapter and blow up otherwise - but BlueZ
+    also exposes non-adapter objects there on stock installs (e.g.
+    /org/bluez/test, a built-in org.bluez.SimAccessTest1 debug object), which
+    makes the upstream helper unusable on a real system. Do the same
+    lookup ourselves, filtering to nodes that actually implement
+    org.bluez.Adapter1.
+    """
+    from bluez_peripheral.util import Adapter
+
+    root = await bus.introspect("org.bluez", "/org/bluez")
+    for node in root.nodes:
+        path = "/org/bluez/" + node.name
+        introspection = await bus.introspect("org.bluez", path)
+        if not any(interface.name == "org.bluez.Adapter1" for interface in introspection.interfaces):
+            continue
+        proxy = bus.get_proxy_object("org.bluez", path, introspection)
+        return Adapter(proxy)
+    raise RuntimeError("No Bluetooth adapter (org.bluez.Adapter1) found under /org/bluez")
+
+
 async def _run_ble_once(controller: PlaybackController, stop_event: asyncio.Event) -> None:
     from bluez_peripheral.advert import Advertisement
     from bluez_peripheral.agent import NoIoAgent
-    from bluez_peripheral.util import Adapter, get_message_bus
+    from bluez_peripheral.util import get_message_bus
 
     from .models import protocol
     from .views.ble_service import MagicBoxieService
@@ -188,7 +207,7 @@ async def _run_ble_once(controller: PlaybackController, stop_event: asyncio.Even
     agent = NoIoAgent()
     await agent.register(bus)
 
-    adapter = await Adapter.get_first(bus)
+    adapter = await _first_bluez_adapter(bus)
     await adapter.set_alias(DEVICE_NAME)
 
     service.start_status_polling()
