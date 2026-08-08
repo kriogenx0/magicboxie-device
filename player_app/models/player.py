@@ -21,6 +21,7 @@ class MpvController:
         self._request_id = itertools.count(1)
         self._pending: Dict[int, "asyncio.Future"] = {}
         self._listen_task: Optional[asyncio.Task] = None
+        self._stderr_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
         socket_path = Path(self._socket_path)
@@ -35,22 +36,41 @@ class MpvController:
             f"--input-ipc-server={self._socket_path}",
             *self._extra_args,
             stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
+            # Piped (not DEVNULL) and drained by _log_stderr for the life of
+            # the process - both so a startup failure (e.g. mpv can't open
+            # its DRM/KMS output) is visible in `journalctl` instead of
+            # silently discarded, and so the pipe never fills up and blocks
+            # mpv if it warns about anything later during normal playback.
+            stderr=asyncio.subprocess.PIPE,
         )
+        self._stderr_task = asyncio.create_task(self._log_stderr())
 
         for _ in range(50):  # wait up to ~5s for mpv to create the socket
             if socket_path.exists():
                 break
+            if self._process.returncode is not None:
+                raise RuntimeError(f"mpv exited immediately with code {self._process.returncode} - see logs above for its stderr")
             await asyncio.sleep(0.1)
         else:
-            raise RuntimeError("mpv did not create its IPC socket in time")
+            self._process.kill()
+            raise RuntimeError("mpv did not create its IPC socket in time - see logs above for its stderr")
 
         self._reader, self._writer = await asyncio.open_unix_connection(self._socket_path)
         self._listen_task = asyncio.create_task(self._listen())
 
+    async def _log_stderr(self) -> None:
+        assert self._process is not None and self._process.stderr is not None
+        while True:
+            line = await self._process.stderr.readline()
+            if not line:
+                break
+            logger.warning("mpv: %s", line.decode(errors="replace").rstrip())
+
     async def stop_process(self) -> None:
         if self._listen_task:
             self._listen_task.cancel()
+        if self._stderr_task:
+            self._stderr_task.cancel()
         if self._writer:
             self._writer.close()
         if self._process and self._process.returncode is None:
