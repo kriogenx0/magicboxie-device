@@ -10,7 +10,7 @@ SERVICE_NAME := magicboxie-device
 SERVICE_FILE := /etc/systemd/system/$(SERVICE_NAME).service
 
 .PHONY: all setup dev build test clean seed-movies \
-	pi-install pi-setup pi-seed-movies pi-run pi-test pi-service pi-start pi-stop \
+	pi pi-pull pi-install pi-setup pi-seed-movies pi-run pi-test pi-service pi-start pi-stop \
 	pi-restart pi-redeploy pi-logs pi-uninstall pi-clean
 
 all: dev
@@ -79,6 +79,19 @@ clean:
 pi-install: pi-setup pi-seed-movies pi-service pi-start
 	@echo "pi-install complete - MagicBoxie is running and will start automatically on boot."
 	@echo "Check status with: make pi-logs"
+
+# Day-to-day version of pi-install, for after the device is already set up:
+# pulls whatever's new, re-runs setup (covers newly-added system deps or a
+# changed pyproject.toml - a no-op otherwise), re-renders the systemd unit
+# (covers changes to deploy/magicboxie-device.service.in), and restarts.
+# Every step is idempotent, so this is safe to re-run any time you've
+# pushed changes and want the Pi caught up and running them.
+pi: pi-pull pi-setup pi-service
+	sudo systemctl restart $(SERVICE_NAME)
+	@echo "Pi is set up, deployed, and running - check status with: make pi-logs"
+
+pi-pull:
+	git pull
 
 # System packages (mpv/ffmpeg/bluez + build headers for evdev/Pillow) and a
 # venv with the app installed. Adds the invoking user to the video/input/
