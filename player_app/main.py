@@ -219,9 +219,19 @@ async def _run_ble_once(controller: PlaybackController, stop_event: asyncio.Even
 
     try:
         while not stop_event.is_set():
-            advert = Advertisement(DEVICE_NAME, [protocol.SERVICE_UUID], 0x0000, ADVERT_TIMEOUT_SECONDS)
+            # No local name here: legacy BLE advertising packets cap out at
+            # 31 bytes, and our 128-bit custom service UUID alone already
+            # takes 18 of those (plus 3 for the flags BlueZ adds
+            # automatically) - there's no room left for a readable name too,
+            # and bluez_peripheral's LocalName property is sent unconditionally
+            # once set, so registration fails outright rather than silently
+            # dropping it. Not a problem for the app: it scans by service
+            # UUID (see MediaControlProtocol.serviceUUID), never by name.
+            # adapter.set_alias() above still gives it a friendly name for
+            # anything that connects and reads the Generic Access Profile.
+            advert = Advertisement("", [protocol.SERVICE_UUID], 0x0000, ADVERT_TIMEOUT_SECONDS)
             await advert.register(bus, adapter)
-            logger.info("Advertising as %r (WiFi: %s)", DEVICE_NAME, network_url)
+            logger.info("Advertising %r (WiFi: %s)", DEVICE_NAME, network_url)
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=ADVERT_REFRESH_SECONDS)
             except asyncio.TimeoutError:
