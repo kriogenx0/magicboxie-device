@@ -11,16 +11,23 @@ Type=simple
 User=@USER@
 WorkingDirectory=@REPO_DIR@
 Environment=MAGICBOXIE_TRANSPORT=ble
-Environment=MAGICBOXIE_DEVICE_NAME=MagicBoxie
 Environment=MAGICBOXIE_MOVIES_DIR=@MOVIES_DIR@
 Environment=MAGICBOXIE_THUMBNAIL_DIR=@THUMBNAIL_DIR@
+# Bluetooth's rfkill soft-block state is persisted independently of this
+# service (systemd-rfkill saves/restores it across reboots) - unblock it
+# unconditionally on every start so BLE doesn't silently disappear after a
+# power cycle. "-" prefix: don't fail the whole unit if rfkill is missing
+# or there's nothing to unblock.
+ExecStartPre=-/usr/sbin/rfkill unblock bluetooth
 ExecStart=@REPO_DIR@/.venv/bin/magicboxie-device
 Restart=on-failure
 RestartSec=2
 
 # DRM/KMS output + evdev keyboard input + BlueZ D-Bus - see `make pi-setup`,
-# which adds @USER@ to these groups.
+# which adds @USER@ to these groups. CAP_NET_ADMIN lets the ExecStartPre
+# rfkill unblock above work without running the whole service as root.
 SupplementaryGroups=video input bluetooth
+AmbientCapabilities=CAP_NET_ADMIN
 
 [Install]
 WantedBy=multi-user.target

@@ -25,7 +25,7 @@ from .models.player import MpvController
 
 logger = logging.getLogger(__name__)
 
-DEVICE_NAME = os.environ.get("MAGICBOXIE_DEVICE_NAME", "MagicBoxie")
+DEVICE_NAME = "MagicBoxieDevice"
 MOVIES_DIR = Path(os.environ.get("MAGICBOXIE_MOVIES_DIR", "/movies"))
 THUMBNAIL_DIR = Path(os.environ.get("MAGICBOXIE_THUMBNAIL_DIR", "/var/lib/magicboxie/thumbnails"))
 

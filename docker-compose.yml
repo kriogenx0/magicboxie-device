@@ -18,7 +18,6 @@ services:
       - ${MAGICBOXIE_MOVIES_DIR:-./movies}:/movies
       - thumbnails:/var/lib/magicboxie/thumbnails
     environment:
-      MAGICBOXIE_DEVICE_NAME: ${MAGICBOXIE_DEVICE_NAME:-MagicBoxie}
       # "http" here by default since there's no BlueZ on macOS/Docker Desktop -
       # this compose file is what you run for local dev. Set to "ble" (e.g. a
       # .env file or `MAGICBOXIE_TRANSPORT=ble docker compose up`) on the real
