@@ -91,14 +91,16 @@ async def _run() -> None:
         raise SystemExit(f"Movies directory does not exist: {MOVIES_DIR}")
 
     library = MovieLibrary(MOVIES_DIR, thumbnail_dir=THUMBNAIL_DIR)
-    library.scan()
 
     player = MpvController(extra_args=_mpv_output_args())
     await player.start()
 
     controller = PlaybackController(library, player)
     # Resting state until something's selected to play - the screen should
-    # never just be black/whatever mpv's own idle window looks like.
+    # never just be black/whatever mpv's own idle window looks like. Shows
+    # empty for now; library.scan() runs concurrently below (_run_library_scan)
+    # rather than blocking here, since probing a real movie library can take
+    # minutes on a Pi Zero W and BLE/mDNS/HTTP registration shouldn't wait on it.
     await controller.show_idle_screen()
 
     stop_event = asyncio.Event()
@@ -111,6 +113,7 @@ async def _run() -> None:
             _run_http(controller, stop_event),
             _run_keyboard(controller, stop_event),
             _run_mdns(stop_event),
+            _run_library_scan(controller),
         ]
         if TRANSPORT != "http":
             tasks.append(_run_ble(controller, stop_event))
@@ -148,6 +151,18 @@ async def _run_mdns(stop_event: asyncio.Event) -> None:
         await stop_event.wait()
     finally:
         await advertiser.stop()
+
+
+async def _run_library_scan(controller: PlaybackController) -> None:
+    """Scans the movie library in a background thread (MovieLibrary.scan()
+    is a blocking chain of ffprobe/ffmpeg subprocess calls) and refreshes
+    the idle screen once it's done. One-shot, not on stop_event - runs
+    concurrently with BLE/mDNS/HTTP registration rather than before it, so
+    the device is discoverable/controllable immediately instead of only
+    after a scan that can take minutes for a real library."""
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, controller.library.scan)
+    await controller.show_idle_screen()
 
 
 async def _run_keyboard(controller: PlaybackController, stop_event: asyncio.Event) -> None:
@@ -196,6 +211,34 @@ async def _first_bluez_adapter(bus):
     raise RuntimeError("No Bluetooth adapter (org.bluez.Adapter1) found under /org/bluez")
 
 
+# bluez_peripheral.advert.Advertisement.register() always exports itself at
+# this fixed default path (it doesn't expose a way to override it from the
+# call sites we use), and only unexports the local D-Bus object afterwards -
+# it never tells BlueZ to unregister the advertisement. See
+# _unregister_advertisement below.
+_ADVERTISEMENT_PATH = "/com/spacecheese/bluez_peripheral/advert0"
+
+
+async def _unregister_advertisement(adapter) -> None:
+    """Tells BlueZ to drop whatever advertisement is currently registered at
+    Advertisement's fixed default path, if any. Needed before every
+    (re-)registration: bluez_peripheral's Advertisement.register() (see
+    _ADVERTISEMENT_PATH) never does this itself, so registering a second
+    Advertisement at the same path - which our periodic refresh loop below
+    does every ADVERT_REFRESH_SECONDS - gets rejected by BlueZ with
+    'Already Exists', permanently killing the advertisement after the first
+    refresh. A no-op (DBusError swallowed) the first time through, when
+    nothing's registered yet.
+    """
+    from dbus_next.errors import DBusError
+
+    interface = adapter._proxy.get_interface("org.bluez.LEAdvertisingManager1")
+    try:
+        await interface.call_unregister_advertisement(_ADVERTISEMENT_PATH)
+    except DBusError:
+        pass
+
+
 async def _run_ble_once(controller: PlaybackController, stop_event: asyncio.Event) -> None:
     from bluez_peripheral.advert import Advertisement
     from bluez_peripheral.agent import NoIoAgent
@@ -237,6 +280,7 @@ async def _run_ble_once(controller: PlaybackController, stop_event: asyncio.Even
             # UUID (see MediaControlProtocol.serviceUUID), never by name.
             # adapter.set_alias() above still gives it a friendly name for
             # anything that connects and reads the Generic Access Profile.
+            await _unregister_advertisement(adapter)
             advert = Advertisement("", [protocol.SERVICE_UUID], 0x0000, ADVERT_TIMEOUT_SECONDS)
             await advert.register(bus, adapter)
             logger.info("Advertising %r (WiFi: %s)", DEVICE_NAME, network_url)
