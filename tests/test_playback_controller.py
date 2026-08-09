@@ -18,6 +18,18 @@ def test_select_and_play_updates_status():
     assert state.movie_id == 1
 
 
+def test_select_unknown_movie_id_is_ignored_not_a_crash():
+    async def scenario():
+        mpv = FakeMpv()
+        controller = PlaybackController(FakeLibrary(), mpv)
+        await controller.handle_command(Command(opcode=Opcode.SELECT_MOVIE, argument=99999))
+        return controller, mpv
+
+    controller, mpv = asyncio.run(scenario())
+    assert controller.is_idle
+    assert mpv.loaded_path is None
+
+
 def test_stop_clears_movie_id():
     async def scenario():
         controller = PlaybackController(FakeLibrary(), FakeMpv())

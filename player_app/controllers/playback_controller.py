@@ -52,6 +52,14 @@ class PlaybackController:
     async def handle_command(self, cmd: Command) -> None:
         self.last_input_at = time.monotonic()
         if cmd.opcode == Opcode.SELECT_MOVIE and cmd.argument is not None:
+            if not any(movie.id == cmd.argument for movie in self.movies):
+                # A client's cached movie list can be stale relative to what
+                # the library currently has (e.g. mid-rescan, or a movie
+                # removed since) - not selecting anything is a much better
+                # failure mode than an unhandled KeyError deep in
+                # library.playable_path_for taking the whole request down.
+                logger.warning("Ignoring select_movie for unknown movie id %d", cmd.argument)
+                return
             self._current_movie_id = cmd.argument
             await self.player.load(self.library.playable_path_for(cmd.argument))
             # Immediate feedback rather than waiting for IdleDimService's
