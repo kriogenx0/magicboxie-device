@@ -109,3 +109,9 @@ class MagicBoxieService(Service):
     @characteristic(protocol.TRANSCODE_STATUS_CHARACTERISTIC_UUID, CharFlags.READ | CharFlags.NOTIFY)
     def transcode_status(self, options):
         return self._transcode_status_bytes[options.offset :]
+
+    @characteristic(protocol.API_VERSION_CHARACTERISTIC_UUID, CharFlags.READ)
+    def api_version(self, options):
+        # No NOTIFY - a running device's protocol version can't change
+        # without a restart, so there's nothing to push an update for.
+        return protocol.encode_api_version()[options.offset :]

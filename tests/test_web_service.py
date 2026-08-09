@@ -4,6 +4,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from fakes import FakeLibrary, FakeMpv
 
 from player_app.controllers.playback_controller import PlaybackController
+from player_app.models import protocol
 from player_app.models.library import MovieLibrary
 from player_app.views.web_service import create_app
 
@@ -31,6 +32,20 @@ def test_get_movies():
         {"id": 0, "title": "A", "duration_seconds": 100, "description": None, "year": None},
         {"id": 1, "title": "B", "duration_seconds": 200, "description": None, "year": None},
     ]
+
+
+def test_get_version():
+    async def scenario():
+        client, _ = await _make_client()
+        try:
+            resp = await client.get("/api/version")
+            assert resp.status == 200
+            return await resp.json()
+        finally:
+            await client.close()
+
+    data = asyncio.run(scenario())
+    assert data == {"api_version": protocol.API_VERSION}
 
 
 def test_post_command_select_and_play_reflected_in_status():

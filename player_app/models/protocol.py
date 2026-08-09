@@ -20,11 +20,22 @@ NETWORK_INFO_CHARACTERISTIC_UUID = "3e2c1a00-3b42-4b7e-9c3e-000000000005"
 # Read-only + notify: which movie (if any) TranscodeService is currently
 # re-encoding in the background - see views/transcode_service.py.
 TRANSCODE_STATUS_CHARACTERISTIC_UUID = "3e2c1a00-3b42-4b7e-9c3e-000000000006"
+# Read-only: see API_VERSION below.
+API_VERSION_CHARACTERISTIC_UUID = "3e2c1a00-3b42-4b7e-9c3e-000000000007"
 
 # iOS long-reads cap out at 512 bytes (BLE ATT maximum attribute value length).
 MAX_CHARACTERISTIC_BYTES = 512
 
 _NO_MOVIE_SENTINEL = 0xFFFF
+
+# Bumped whenever this wire protocol changes in a way an older/newer client
+# couldn't safely interpret (a new opcode, a changed characteristic
+# encoding, a removed field, etc.) - purely additive changes (a new
+# characteristic an old client just never reads, like this one) don't need
+# a bump. The app compares this against the version it was built to
+# understand and prompts for an update on a mismatch, rather than failing
+# in some more confusing way further down.
+API_VERSION = 1
 
 
 class Opcode(IntEnum):
@@ -107,6 +118,11 @@ def decode_transcode_status(data: bytes) -> Optional[int]:
         raise ValueError("transcode status payload too short")
     value = int.from_bytes(data[0:2], "little")
     return None if value == _NO_MOVIE_SENTINEL else value
+
+
+def encode_api_version() -> bytes:
+    """1 byte - see API_VERSION."""
+    return bytes([API_VERSION])
 
 
 def encode_library(movies: List[Movie], max_bytes: int = MAX_CHARACTERISTIC_BYTES) -> bytes:

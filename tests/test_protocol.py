@@ -49,6 +49,11 @@ def test_transcode_status_round_trip_movie_id():
     assert protocol.decode_transcode_status(encoded) == 7
 
 
+def test_api_version_is_a_single_byte_matching_the_constant():
+    encoded = protocol.encode_api_version()
+    assert encoded == bytes([protocol.API_VERSION])
+
+
 def test_library_round_trip():
     movies = [
         Movie(id=0, title="Star Wars", duration_seconds=7620),

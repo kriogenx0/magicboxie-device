@@ -14,7 +14,7 @@ from aiohttp import web
 
 from ..controllers.playback_controller import PlaybackController
 from ..models.library import VIDEO_EXTENSIONS
-from ..models.protocol import Command, Movie, Opcode
+from ..models.protocol import API_VERSION, Command, Movie, Opcode
 
 _METADATA_FIELDS = ("title", "description", "year", "duration_seconds")
 
@@ -42,6 +42,7 @@ def create_app(controller: PlaybackController) -> web.Application:
     app.router.add_post("/api/movies/{id}/metadata", _post_metadata)
     app.router.add_get("/api/status", _get_status)
     app.router.add_post("/api/command", _post_command)
+    app.router.add_get("/api/version", _get_version)
     return app
 
 
@@ -205,6 +206,10 @@ async def _get_status(request: web.Request) -> web.Response:
         "movie_id": state.movie_id,
         "position_seconds": state.position_seconds,
     })
+
+
+async def _get_version(request: web.Request) -> web.Response:
+    return web.json_response({"api_version": API_VERSION})
 
 
 async def _post_command(request: web.Request) -> web.Response:
