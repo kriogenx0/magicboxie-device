@@ -17,6 +17,14 @@ DEFAULT_THUMBNAIL_DIR = Path("/var/lib/magicboxie/thumbnails")
 THUMBNAIL_TIMESTAMP_SECONDS = 60
 THUMBNAIL_WIDTH = 200
 
+# How long to wait for ffprobe to report a file's duration. Was 10s, which
+# sounds generous but isn't on a Pi Zero W: probing a real, multi-hundred-MB
+# movie (as opposed to the tiny synthetic clips used in dev) measured ~19s
+# there, so every real movie was silently timing out and getting recorded
+# with duration=0. A one-shot per-movie cost at scan time, not per playback,
+# so there's no reason to keep this tight.
+PROBE_TIMEOUT_SECONDS = 60
+
 
 class MovieLibrary:
     def __init__(self, root: Path, thumbnail_dir: Path = DEFAULT_THUMBNAIL_DIR):
@@ -120,7 +128,7 @@ class MovieLibrary:
                 ],
                 capture_output=True,
                 text=True,
-                timeout=10,
+                timeout=PROBE_TIMEOUT_SECONDS,
                 check=True,
             )
             return int(float(result.stdout.strip()))
