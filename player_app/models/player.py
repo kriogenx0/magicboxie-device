@@ -20,6 +20,24 @@ logger = logging.getLogger(__name__)
 # cleanly - it just needed more time, not a different invocation.
 MPV_STARTUP_TIMEOUT_SECONDS = 30
 
+# Virtual canvas mpv scales OSD overlay drawings onto, independent of the
+# actual output resolution - arbitrary but must match between show/hide
+# calls (mpv identifies an overlay by id, but a mismatched res would
+# reposition/rescale it).
+_OSD_RES_X = 1280
+_OSD_RES_Y = 720
+_PAUSE_ICON_OVERLAY_ID = 1
+# Two bars drawn as ASS vector shapes (rather than a Unicode "⏸" character)
+# so this doesn't depend on whatever font mpv falls back to actually having
+# that glyph. \an7\pos(40,600) anchors the drawing's own top-left origin
+# there, placing it near the bottom-left of the 1280x720 canvas.
+_PAUSE_ICON_ASS = (
+    r"{\an7\pos(40,600)\1c&HFFFFFF&\bord0\shad0\p1}"
+    r"m 0 0 l 24 0 l 24 80 l 0 80 "
+    r"m 40 0 l 64 0 l 64 80 l 40 80"
+    r"{\p0}"
+)
+
 
 class MpvController:
     def __init__(self, socket_path: str = "/tmp/magicboxie-mpv.sock", extra_args: Optional[List[str]] = None):
@@ -181,3 +199,24 @@ class MpvController:
             return bool(response.get("data"))
         except asyncio.TimeoutError:
             return True
+
+    async def set_dim(self, percent: int) -> None:
+        """Simulates dimming via mpv's brightness video-equalizer property
+        (-100..100, 0 = normal, negative = darker) - the Pi's HDMI output
+        has no backlight control accessible from software, so this is the
+        most direct lever mpv exposes for "make the picture darker" without
+        actually stopping video output. Pass 0 to undo."""
+        await self._command("set_property", "brightness", -abs(percent))
+
+    async def show_pause_icon(self) -> None:
+        """Persistent pause glyph overlaid near the bottom-left corner -
+        stays up until hide_pause_icon() clears it, unlike show-text's
+        timed messages."""
+        await self._command(
+            "osd-overlay", _PAUSE_ICON_OVERLAY_ID, "ass-events", _PAUSE_ICON_ASS, _OSD_RES_X, _OSD_RES_Y,
+        )
+
+    async def hide_pause_icon(self) -> None:
+        await self._command(
+            "osd-overlay", _PAUSE_ICON_OVERLAY_ID, "none", "", _OSD_RES_X, _OSD_RES_Y,
+        )

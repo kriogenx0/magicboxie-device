@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import List, Optional
 
 from ..models.idle_screen import render_idle_screen
@@ -12,6 +13,11 @@ from ..models.player import MpvController
 from ..models.protocol import Command, Movie, Opcode, PlaybackState, PlaybackStatus
 
 logger = logging.getLogger(__name__)
+
+# How much to dim the picture (via MpvController.set_dim) while paused -
+# separate from, and much lighter than, IdleDimService's dim for extended
+# inactivity with nothing selected at all.
+PAUSE_DIM_PERCENT = 10
 
 
 class PlaybackController:
@@ -24,6 +30,12 @@ class PlaybackController:
         # than a direct dependency between them, mirroring how is_idle
         # already works in the other direction (TranscodeService reads it).
         self.currently_transcoding_movie_id: Optional[int] = None
+        # Updated on every command (remote or local) - IdleDimService reads
+        # this to know how long it's been since anything happened, so it
+        # knows when to dim the idle screen. monotonic(), not wall-clock
+        # time, since it only needs to measure elapsed duration and can't
+        # be upset by clock adjustments.
+        self.last_input_at: float = time.monotonic()
 
     @property
     def movies(self) -> List[Movie]:
@@ -38,13 +50,21 @@ class PlaybackController:
         return self._current_movie_id is None
 
     async def handle_command(self, cmd: Command) -> None:
+        self.last_input_at = time.monotonic()
         if cmd.opcode == Opcode.SELECT_MOVIE and cmd.argument is not None:
             self._current_movie_id = cmd.argument
             await self.player.load(self.library.playable_path_for(cmd.argument))
+            # Immediate feedback rather than waiting for IdleDimService's
+            # next poll to notice is_idle flipped and undo an idle dim.
+            await self.player.set_dim(0)
         elif cmd.opcode == Opcode.PLAY:
             await self.player.play()
+            await self.player.hide_pause_icon()
+            await self.player.set_dim(0)
         elif cmd.opcode == Opcode.PAUSE:
             await self.player.pause()
+            await self.player.show_pause_icon()
+            await self.player.set_dim(PAUSE_DIM_PERCENT)
         elif cmd.opcode == Opcode.STOP:
             await self.stop_and_show_idle_screen()
         elif cmd.opcode == Opcode.SEEK and cmd.argument is not None:
@@ -78,6 +98,11 @@ class PlaybackController:
         frame."""
         await self.player.stop()
         self._current_movie_id = None
+        # The pause icon/dim are a separate overlay layer from whatever's
+        # loaded, so stopping while paused would otherwise leave them
+        # visible over the idle screen.
+        await self.player.hide_pause_icon()
+        await self.player.set_dim(0)
         await self.show_idle_screen()
 
     async def refresh_status(self) -> PlaybackState:

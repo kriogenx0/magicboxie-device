@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Set
 
 from ..controllers.playback_controller import PlaybackController
@@ -73,7 +74,12 @@ class KeyboardService:
 
         try:
             async for event in device.async_read_loop():
-                if event.type == evdev.ecodes.EV_KEY and event.code == evdev.ecodes.KEY_ESC and event.value == 1:
+                if event.type != evdev.ecodes.EV_KEY or event.value != 1:
+                    continue
+                # Any keypress counts as "input" for IdleDimService, even
+                # though only Escape actually does something.
+                self._controller.last_input_at = time.monotonic()
+                if event.code == evdev.ecodes.KEY_ESC:
                     logger.info("Escape pressed - stopping playback")
                     await self._controller.stop_and_show_idle_screen()
         except OSError:

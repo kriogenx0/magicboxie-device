@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 from fakes import FakeLibrary, FakeMpv
 
-from player_app.controllers.playback_controller import PlaybackController
+from player_app.controllers.playback_controller import PAUSE_DIM_PERCENT, PlaybackController
 from player_app.models.protocol import Command, Opcode, PlaybackStatus
 
 
@@ -76,6 +76,58 @@ def test_seek_updates_position():
 
     state = asyncio.run(scenario())
     assert state.position_seconds == 42
+
+
+def test_pause_dims_and_shows_pause_icon():
+    async def scenario():
+        mpv = FakeMpv()
+        controller = PlaybackController(FakeLibrary(), mpv)
+        await controller.handle_command(Command(opcode=Opcode.SELECT_MOVIE, argument=0))
+        await controller.handle_command(Command(opcode=Opcode.PAUSE))
+        return mpv
+
+    mpv = asyncio.run(scenario())
+    assert mpv.dim_percent == PAUSE_DIM_PERCENT
+    assert mpv.pause_icon_shown
+
+
+def test_play_clears_dim_and_pause_icon():
+    async def scenario():
+        mpv = FakeMpv()
+        controller = PlaybackController(FakeLibrary(), mpv)
+        await controller.handle_command(Command(opcode=Opcode.SELECT_MOVIE, argument=0))
+        await controller.handle_command(Command(opcode=Opcode.PAUSE))
+        await controller.handle_command(Command(opcode=Opcode.PLAY))
+        return mpv
+
+    mpv = asyncio.run(scenario())
+    assert mpv.dim_percent == 0
+    assert not mpv.pause_icon_shown
+
+
+def test_stop_clears_dim_and_pause_icon_left_over_from_a_pause():
+    async def scenario():
+        mpv = FakeMpv()
+        controller = PlaybackController(FakeLibrary(), mpv)
+        await controller.handle_command(Command(opcode=Opcode.SELECT_MOVIE, argument=0))
+        await controller.handle_command(Command(opcode=Opcode.PAUSE))
+        await controller.handle_command(Command(opcode=Opcode.STOP))
+        return mpv
+
+    mpv = asyncio.run(scenario())
+    assert mpv.dim_percent == 0
+    assert not mpv.pause_icon_shown
+
+
+def test_any_command_updates_last_input_at():
+    async def scenario():
+        controller = PlaybackController(FakeLibrary(), FakeMpv())
+        controller.last_input_at = 0
+        await controller.handle_command(Command(opcode=Opcode.SELECT_MOVIE, argument=0))
+        return controller.last_input_at
+
+    last_input_at = asyncio.run(scenario())
+    assert last_input_at > 0
 
 
 def test_shutdown_invokes_systemctl_poweroff_via_sudo():

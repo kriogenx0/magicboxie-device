@@ -110,6 +110,7 @@ async def _run() -> None:
             _run_mdns(stop_event),
             _run_library_scan(controller, stop_event),
             _run_transcode(controller, stop_event),
+            _run_idle_dim(controller, stop_event),
         ]
         if TRANSPORT != "http":
             tasks.append(_run_ble(controller, stop_event))
@@ -180,6 +181,14 @@ async def _run_transcode(controller: PlaybackController, stop_event: asyncio.Eve
     from .views.transcode_service import TranscodeService
 
     await TranscodeService(controller).run(stop_event)
+
+
+async def _run_idle_dim(controller: PlaybackController, stop_event: asyncio.Event) -> None:
+    """Dims the idle screen after extended inactivity - see
+    views/idle_dim_service.py."""
+    from .views.idle_dim_service import IdleDimService
+
+    await IdleDimService(controller).run(stop_event)
 
 
 async def _run_keyboard(controller: PlaybackController, stop_event: asyncio.Event) -> None:

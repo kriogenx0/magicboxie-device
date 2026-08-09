@@ -11,6 +11,8 @@ class FakeMpv:
         self.paused = True
         self.idle = True
         self.position = 0
+        self.dim_percent = 0
+        self.pause_icon_shown = False
 
     async def load(self, path):
         self.loaded_path = path
@@ -44,6 +46,15 @@ class FakeMpv:
 
     async def get_idle(self):
         return self.idle
+
+    async def set_dim(self, percent):
+        self.dim_percent = percent
+
+    async def show_pause_icon(self):
+        self.pause_icon_shown = True
+
+    async def hide_pause_icon(self):
+        self.pause_icon_shown = False
 
 
 class FakeLibrary:
