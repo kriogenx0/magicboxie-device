@@ -13,6 +13,7 @@ WorkingDirectory=@REPO_DIR@
 Environment=MAGICBOXIE_TRANSPORT=ble
 Environment=MAGICBOXIE_MOVIES_DIR=@MOVIES_DIR@
 Environment=MAGICBOXIE_THUMBNAIL_DIR=@THUMBNAIL_DIR@
+Environment=MAGICBOXIE_TRANSCODE_DIR=@TRANSCODE_DIR@
 # Bluetooth's rfkill soft-block state is persisted independently of this
 # service (systemd-rfkill saves/restores it across reboots) - unblock it
 # unconditionally on every start so BLE doesn't silently disappear after a

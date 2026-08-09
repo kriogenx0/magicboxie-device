@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".m4v"}
 
 DEFAULT_THUMBNAIL_DIR = Path("/var/lib/magicboxie/thumbnails")
+DEFAULT_TRANSCODE_DIR = Path("/var/lib/magicboxie/transcoded")
 THUMBNAIL_TIMESTAMP_SECONDS = 60
 THUMBNAIL_WIDTH = 200
 
@@ -33,7 +34,12 @@ _MOVIE_ID_SPACE = 0xFFFF
 
 
 class MovieLibrary:
-    def __init__(self, root: Path, thumbnail_dir: Path = DEFAULT_THUMBNAIL_DIR):
+    def __init__(
+        self,
+        root: Path,
+        thumbnail_dir: Path = DEFAULT_THUMBNAIL_DIR,
+        transcode_dir: Path = DEFAULT_TRANSCODE_DIR,
+    ):
         # The movies directory is typically mounted read-only, so thumbnails
         # (and phone-supplied metadata) are cached in a separate, writable
         # location instead of alongside it.
@@ -43,6 +49,7 @@ class MovieLibrary:
         self._thumbnail_paths: Dict[int, Path] = {}
         self._metadata: Dict[int, dict] = {}
         self._thumbnail_dir = thumbnail_dir
+        self._transcode_dir = transcode_dir
 
     def scan(self) -> List[Movie]:
         """Reads the movies directory from the filesystem and caches the
@@ -85,6 +92,20 @@ class MovieLibrary:
 
     def path_for(self, movie_id: int) -> Path:
         return self._paths[movie_id]
+
+    def transcode_path_for(self, movie_id: int) -> Path:
+        """Where TranscodeService writes (or would write) a version of this
+        movie re-encoded to something this device's CPU can decode smoothly.
+        Doesn't imply the file exists yet - see playable_path_for()."""
+        return self._transcode_dir / f"{movie_id}.mp4"
+
+    def playable_path_for(self, movie_id: int) -> Path:
+        """What to actually hand mpv: a background-transcoded copy if
+        TranscodeService has finished one, otherwise the original. The
+        original may be too demanding for this device's weak CPU to decode
+        smoothly, which is the whole reason TranscodeService exists."""
+        transcoded = self.transcode_path_for(movie_id)
+        return transcoded if transcoded.exists() else self._paths[movie_id]
 
     def thumbnail_path_for(self, movie_id: int) -> Optional[Path]:
         return self._thumbnail_paths.get(movie_id)

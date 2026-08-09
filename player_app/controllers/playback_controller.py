@@ -23,10 +23,18 @@ class PlaybackController:
     def movies(self) -> List[Movie]:
         return self.library.movies
 
+    @property
+    def is_idle(self) -> bool:
+        """Whether anything is currently selected to play - checked by
+        TranscodeService before starting (or continuing) a background
+        transcode, since that's CPU-intensive enough to compete directly
+        with playback decode on this device's single core."""
+        return self._current_movie_id is None
+
     async def handle_command(self, cmd: Command) -> None:
         if cmd.opcode == Opcode.SELECT_MOVIE and cmd.argument is not None:
             self._current_movie_id = cmd.argument
-            await self.player.load(self.library.path_for(cmd.argument))
+            await self.player.load(self.library.playable_path_for(cmd.argument))
         elif cmd.opcode == Opcode.PLAY:
             await self.player.play()
         elif cmd.opcode == Opcode.PAUSE:

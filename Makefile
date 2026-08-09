@@ -2,6 +2,7 @@ IMAGE := magicboxie-device
 MOVIES_DIR := movies
 VENV := .venv
 THUMBNAIL_DIR := /var/lib/magicboxie/thumbnails
+TRANSCODE_DIR := /var/lib/magicboxie/transcoded
 # Fixed absolute path on the Pi where content lives - independent of wherever
 # this repo happens to be checked out, unlike MOVIES_DIR above (which is
 # Docker-dev-only, relative to the repo, and unrelated to the real device).
@@ -108,8 +109,8 @@ pi-setup:
 	python3 -m venv $(VENV)
 	$(VENV)/bin/pip install --upgrade pip
 	$(VENV)/bin/pip install -e .
-	sudo mkdir -p $(THUMBNAIL_DIR) $(CONTENT_DIR)
-	sudo chown "$$(whoami)" $(THUMBNAIL_DIR) $(CONTENT_DIR)
+	sudo mkdir -p $(THUMBNAIL_DIR) $(TRANSCODE_DIR) $(CONTENT_DIR)
+	sudo chown "$$(whoami)" $(THUMBNAIL_DIR) $(TRANSCODE_DIR) $(CONTENT_DIR)
 	@echo "pi-setup complete - log out/in (or reboot) so the new group membership takes effect."
 
 # Same sample-video seeding as `seed-movies`, but into the real device's
@@ -128,7 +129,7 @@ pi-seed-movies:
 # Foreground run in the current terminal - useful for a quick check or
 # debugging without installing the systemd service. Ctrl-C to stop.
 pi-run: pi-seed-movies
-	MAGICBOXIE_MOVIES_DIR=$(CONTENT_DIR) MAGICBOXIE_THUMBNAIL_DIR=$(THUMBNAIL_DIR) $(VENV)/bin/magicboxie-device
+	MAGICBOXIE_MOVIES_DIR=$(CONTENT_DIR) MAGICBOXIE_THUMBNAIL_DIR=$(THUMBNAIL_DIR) MAGICBOXIE_TRANSCODE_DIR=$(TRANSCODE_DIR) $(VENV)/bin/magicboxie-device
 
 # Runs the test suite in the same venv the app runs in on the Pi.
 pi-test:
@@ -144,6 +145,7 @@ pi-service: pi-setup
 		-e 's|@REPO_DIR@|$(CURDIR)|g' \
 		-e 's|@MOVIES_DIR@|$(CONTENT_DIR)|g' \
 		-e 's|@THUMBNAIL_DIR@|$(THUMBNAIL_DIR)|g' \
+		-e 's|@TRANSCODE_DIR@|$(TRANSCODE_DIR)|g' \
 		deploy/magicboxie-device.service.in | sudo tee $(SERVICE_FILE) >/dev/null
 	sudo systemctl daemon-reload
 	sudo systemctl enable $(SERVICE_NAME)

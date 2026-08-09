@@ -47,11 +47,16 @@ class FakeMpv:
 
 
 class FakeLibrary:
-    def __init__(self, thumbnail_paths=None, thumbnail_dir=None, metadata=None):
+    def __init__(self, thumbnail_paths=None, thumbnail_dir=None, metadata=None, transcode_dir=None):
         self._paths = {0: Path("/movies/a.mp4"), 1: Path("/movies/b.mp4")}
         self._thumbnail_paths = thumbnail_paths or {}
         self._thumbnail_dir = thumbnail_dir
         self._metadata = metadata or {}
+        # Real dir (mirrors MovieLibrary) so tests can create/omit a file
+        # there to control transcode_path_for(...).exists() naturally,
+        # rather than a separate bookkeeping dict that could drift from the
+        # real disk-existence-based behavior it's standing in for.
+        self._transcode_dir = transcode_dir or Path("/transcoded")
 
     @property
     def movies(self):
@@ -62,6 +67,13 @@ class FakeLibrary:
 
     def path_for(self, movie_id):
         return self._paths[movie_id]
+
+    def transcode_path_for(self, movie_id):
+        return self._transcode_dir / f"{movie_id}.mp4"
+
+    def playable_path_for(self, movie_id):
+        transcoded = self.transcode_path_for(movie_id)
+        return transcoded if transcoded.exists() else self._paths[movie_id]
 
     def thumbnail_path_for(self, movie_id):
         return self._thumbnail_paths.get(movie_id)

@@ -8,6 +8,10 @@ fit for bulk data (movie library, thumbnails), so the app also discovers the
 device directly over WiFi via mDNS and uses that for those. "http" mode
 (dev/testing - no Bluetooth required, e.g. no BlueZ on Docker Desktop/macOS)
 runs the HTTP service and mDNS advertisement alone, without BLE.
+
+Also runs a background transcode worker (views/transcode_service.py) that
+re-encodes movies, one at a time, to something this device's weak CPU can
+actually decode smoothly - only while nothing is playing.
 """
 from __future__ import annotations
 
@@ -22,12 +26,14 @@ from typing import List
 from .controllers.playback_controller import PlaybackController
 from .models.library import MovieLibrary
 from .models.player import MpvController
+from .util import sleep_unless_stopped
 
 logger = logging.getLogger(__name__)
 
 DEVICE_NAME = "MagicBoxieDevice"
 MOVIES_DIR = Path(os.environ.get("MAGICBOXIE_MOVIES_DIR", "/movies"))
 THUMBNAIL_DIR = Path(os.environ.get("MAGICBOXIE_THUMBNAIL_DIR", "/var/lib/magicboxie/thumbnails"))
+TRANSCODE_DIR = Path(os.environ.get("MAGICBOXIE_TRANSCODE_DIR", "/var/lib/magicboxie/transcoded"))
 
 # "ble" (default, real device) or "http" (dev/testing - no Bluetooth required,
 # e.g. when there's no BlueZ available such as Docker Desktop on macOS).
@@ -60,17 +66,6 @@ def _mpv_output_args() -> List[str]:
     return raw.split()
 
 
-async def _sleep_unless_stopped(stop_event: asyncio.Event, seconds: float) -> None:
-    """Sleeps for `seconds`, waking early if `stop_event` is set. Shared by
-    every "retry/refresh on an interval, but stop immediately if asked to"
-    loop below, so each one doesn't need its own try/except TimeoutError
-    around asyncio.wait_for."""
-    try:
-        await asyncio.wait_for(stop_event.wait(), timeout=seconds)
-    except asyncio.TimeoutError:
-        pass
-
-
 def _local_ip() -> str:
     """Best-effort LAN IP: opens a UDP "connection" (no packets sent) to a
     public address just to see which local interface routing would use."""
@@ -90,7 +85,7 @@ async def _run() -> None:
     if not MOVIES_DIR.is_dir():
         raise SystemExit(f"Movies directory does not exist: {MOVIES_DIR}")
 
-    library = MovieLibrary(MOVIES_DIR, thumbnail_dir=THUMBNAIL_DIR)
+    library = MovieLibrary(MOVIES_DIR, thumbnail_dir=THUMBNAIL_DIR, transcode_dir=TRANSCODE_DIR)
 
     player = MpvController(extra_args=_mpv_output_args())
     await player.start()
@@ -114,6 +109,7 @@ async def _run() -> None:
             _run_keyboard(controller, stop_event),
             _run_mdns(stop_event),
             _run_library_scan(controller, stop_event),
+            _run_transcode(controller, stop_event),
         ]
         if TRANSPORT != "http":
             tasks.append(_run_ble(controller, stop_event))
@@ -175,6 +171,17 @@ async def _run_library_scan(controller: PlaybackController, stop_event: asyncio.
         await controller.show_idle_screen()
 
 
+async def _run_transcode(controller: PlaybackController, stop_event: asyncio.Event) -> None:
+    """Re-encodes movies in the background, one at a time, to something this
+    device's weak CPU can decode smoothly - see views/transcode_service.py
+    for why and the encode settings. Only runs while idle (checked
+    internally against controller.is_idle), so it never competes with
+    playback decode for the same core."""
+    from .views.transcode_service import TranscodeService
+
+    await TranscodeService(controller).run(stop_event)
+
+
 async def _run_keyboard(controller: PlaybackController, stop_event: asyncio.Event) -> None:
     """Escape-to-stop from a directly-attached USB keyboard - the device's
     only local input, independent of BLE/HTTP and the iOS app. Runs in both
@@ -196,7 +203,7 @@ async def _run_ble(controller: PlaybackController, stop_event: asyncio.Event) ->
             await _run_ble_once(controller, stop_event)
         except Exception:
             logger.exception("BLE service failed - retrying in %ds", BLE_RETRY_SECONDS)
-        await _sleep_unless_stopped(stop_event, BLE_RETRY_SECONDS)
+        await sleep_unless_stopped(stop_event, BLE_RETRY_SECONDS)
 
 
 async def _first_bluez_adapter(bus):
@@ -294,7 +301,7 @@ async def _run_ble_once(controller: PlaybackController, stop_event: asyncio.Even
             advert = Advertisement("", [protocol.SERVICE_UUID], 0x0000, ADVERT_TIMEOUT_SECONDS)
             await advert.register(bus, adapter)
             logger.info("Advertising %r (WiFi: %s)", DEVICE_NAME, network_url)
-            await _sleep_unless_stopped(stop_event, ADVERT_REFRESH_SECONDS)
+            await sleep_unless_stopped(stop_event, ADVERT_REFRESH_SECONDS)
     finally:
         await service.stop_status_polling()
 
@@ -311,7 +318,7 @@ async def _run_home_sync(controller: PlaybackController, stop_event: asyncio.Eve
             await sync.check_in()
         except Exception:
             logger.exception("Home server check-in failed unexpectedly")
-        await _sleep_unless_stopped(stop_event, HOME_SERVER_CHECKIN_SECONDS)
+        await sleep_unless_stopped(stop_event, HOME_SERVER_CHECKIN_SECONDS)
 
 
 def run() -> None:
