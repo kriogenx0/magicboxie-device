@@ -25,7 +25,6 @@ class MagicBoxieService(Service):
     def __init__(self, controller: PlaybackController, network_url: str):
         super().__init__(protocol.SERVICE_UUID, True)
         self._controller = controller
-        self._library_bytes = protocol.encode_library(controller.movies)
         self._status_bytes = protocol.encode_status(PlaybackState.idle())
         self._network_url_bytes = network_url.encode("utf-8")
         self._poll_task: Optional[asyncio.Task] = None
@@ -36,10 +35,6 @@ class MagicBoxieService(Service):
     async def stop_status_polling(self) -> None:
         if self._poll_task:
             self._poll_task.cancel()
-
-    def refresh_library(self) -> None:
-        self._library_bytes = protocol.encode_library(self._controller.movies)
-        self.library.changed(self._library_bytes)
 
     async def _poll_status_loop(self) -> None:
         while True:
@@ -78,7 +73,14 @@ class MagicBoxieService(Service):
 
     @characteristic(protocol.LIBRARY_CHARACTERISTIC_UUID, CharFlags.READ)
     def library(self, options):
-        return self._library_bytes
+        # Computed fresh on every read rather than cached at construction
+        # time - the library now scans concurrently with BLE startup (see
+        # _run_library_scan in main.py) instead of before it, so a cached
+        # snapshot taken at construction would be stuck empty forever once
+        # the scan finishes (no NOTIFY on this characteristic to push an
+        # update, and nothing to have called it anyway). Cheap enough
+        # (~10-30 short lines) to just recompute per read.
+        return protocol.encode_library(self._controller.movies)
 
     @characteristic(protocol.NETWORK_INFO_CHARACTERISTIC_UUID, CharFlags.READ)
     def network_info(self, options):
