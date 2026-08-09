@@ -80,8 +80,17 @@ class MagicBoxieService(Service):
         # the scan finishes (no NOTIFY on this characteristic to push an
         # update, and nothing to have called it anyway). Cheap enough
         # (~10-30 short lines) to just recompute per read.
-        return protocol.encode_library(self._controller.movies)
+        #
+        # options.offset must be honored here: bluez_peripheral's ReadValue
+        # returns whatever this getter returns as-is for every ATT read,
+        # including "long read" blob continuations (real libraries with
+        # real titles routinely exceed one MTU chunk) - it does not slice
+        # for us despite the offset being available. Returning the full
+        # value regardless of offset made every continuation read repeat
+        # from byte 0, corrupting the reassembled payload into something
+        # that fails to parse into any movies at all.
+        return protocol.encode_library(self._controller.movies)[options.offset :]
 
     @characteristic(protocol.NETWORK_INFO_CHARACTERISTIC_UUID, CharFlags.READ)
     def network_info(self, options):
-        return self._network_url_bytes
+        return self._network_url_bytes[options.offset :]
