@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import zlib
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -24,6 +25,11 @@ THUMBNAIL_WIDTH = 200
 # with duration=0. A one-shot per-movie cost at scan time, not per playback,
 # so there's no reason to keep this tight.
 PROBE_TIMEOUT_SECONDS = 60
+
+# Movie ids must stay under this - protocol.encode_status packs movie_id into
+# 2 bytes with 0xFFFF reserved to mean "no movie" (see protocol.py's
+# _NO_MOVIE_SENTINEL), so valid ids run 0..0xFFFE.
+_MOVIE_ID_SPACE = 0xFFFF
 
 
 class MovieLibrary:
@@ -53,17 +59,18 @@ class MovieLibrary:
         paths = {}
         thumbnail_paths = {}
         metadata = {}
-        for index, path in enumerate(files):
+        for path in files:
+            movie_id = self._stable_id(path, taken=paths)
             movies.append(
-                Movie(id=index, title=path.stem, duration_seconds=self._probe_duration(path))
+                Movie(id=movie_id, title=path.stem, duration_seconds=self._probe_duration(path))
             )
-            paths[index] = path
+            paths[movie_id] = path
 
-            thumbnail = self._ensure_thumbnail(index, path)
+            thumbnail = self._ensure_thumbnail(movie_id, path)
             if thumbnail is not None:
-                thumbnail_paths[index] = thumbnail
+                thumbnail_paths[movie_id] = thumbnail
 
-            metadata[index] = self._load_metadata(index)
+            metadata[movie_id] = self._load_metadata(movie_id)
 
         self._movies = movies
         self._paths = paths
@@ -105,6 +112,29 @@ class MovieLibrary:
         metadata_path = self._thumbnail_dir / f"{movie_id}.json"
         metadata_path.write_text(json.dumps(updated))
         return updated
+
+    @staticmethod
+    def _stable_id(path: Path, taken: Dict[int, Path]) -> int:
+        """A movie's id must stay the same across rescans regardless of what
+        other files exist - it's used both over the wire (a client that
+        selects/reports on an id from one scan needs it to still mean the
+        same movie after the next) and to key persisted thumbnail/metadata
+        files on disk. The previous scheme (a plain enumerate() index over
+        the sorted file list) shifted for every movie whenever a file was
+        added or removed anywhere earlier in sort order, silently
+        reattaching one movie's thumbnail/metadata/selection to whatever
+        movie now landed on its old id. Deriving the id from the filename
+        alone fixes that: it only changes if the file itself is renamed.
+
+        taken is the id->path mapping built so far this scan, used to probe
+        past a hash collision (rare for a personal-library-sized directory,
+        but cheap to handle) rather than letting two files silently share
+        an id.
+        """
+        movie_id = zlib.crc32(path.name.encode("utf-8")) % _MOVIE_ID_SPACE
+        while movie_id in taken:
+            movie_id = (movie_id + 1) % _MOVIE_ID_SPACE
+        return movie_id
 
     def _load_metadata(self, movie_id: int) -> dict:
         metadata_path = self._thumbnail_dir / f"{movie_id}.json"
