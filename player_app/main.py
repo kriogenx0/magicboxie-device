@@ -113,7 +113,7 @@ async def _run() -> None:
             _run_http(controller, stop_event),
             _run_keyboard(controller, stop_event),
             _run_mdns(stop_event),
-            _run_library_scan(controller),
+            _run_library_scan(controller, stop_event),
         ]
         if TRANSPORT != "http":
             tasks.append(_run_ble(controller, stop_event))
@@ -153,16 +153,26 @@ async def _run_mdns(stop_event: asyncio.Event) -> None:
         await advertiser.stop()
 
 
-async def _run_library_scan(controller: PlaybackController) -> None:
+async def _run_library_scan(controller: PlaybackController, stop_event: asyncio.Event) -> None:
     """Scans the movie library in a background thread (MovieLibrary.scan()
     is a blocking chain of ffprobe/ffmpeg subprocess calls) and refreshes
-    the idle screen once it's done. One-shot, not on stop_event - runs
-    concurrently with BLE/mDNS/HTTP registration rather than before it, so
-    the device is discoverable/controllable immediately instead of only
-    after a scan that can take minutes for a real library."""
+    the idle screen once it's done. One-shot, not retried on an interval -
+    runs concurrently with BLE/mDNS/HTTP registration rather than before it,
+    so the device is discoverable/controllable immediately instead of only
+    after a scan that can take minutes for a real library.
+
+    run_in_executor isn't interruptible by stop_event - a shutdown mid-scan
+    (e.g. a redeploy restart) lets the scan run to completion in the
+    background regardless, by which point systemd's SIGTERM may already
+    have killed mpv too (KillMode=control-group sends it to the whole
+    process group, mpv included). Checking stop_event before touching mpv
+    again avoids writing to that now-dead connection and crashing the
+    daemon on the way out.
+    """
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, controller.library.scan)
-    await controller.show_idle_screen()
+    if not stop_event.is_set():
+        await controller.show_idle_screen()
 
 
 async def _run_keyboard(controller: PlaybackController, stop_event: asyncio.Event) -> None:
