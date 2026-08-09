@@ -19,6 +19,11 @@ class PlaybackController:
         self.library = library
         self.player = player
         self._current_movie_id: Optional[int] = None
+        # Set/cleared by TranscodeService, read by ble_service.py's status
+        # poll loop to notify the app - a shared hub between the two rather
+        # than a direct dependency between them, mirroring how is_idle
+        # already works in the other direction (TranscodeService reads it).
+        self.currently_transcoding_movie_id: Optional[int] = None
 
     @property
     def movies(self) -> List[Movie]:

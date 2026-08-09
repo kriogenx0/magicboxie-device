@@ -38,6 +38,17 @@ def test_status_round_trip_playing():
     assert protocol.decode_status(encoded) == state
 
 
+def test_transcode_status_round_trip_none():
+    encoded = protocol.encode_transcode_status(None)
+    assert len(encoded) == 2
+    assert protocol.decode_transcode_status(encoded) is None
+
+
+def test_transcode_status_round_trip_movie_id():
+    encoded = protocol.encode_transcode_status(7)
+    assert protocol.decode_transcode_status(encoded) == 7
+
+
 def test_library_round_trip():
     movies = [
         Movie(id=0, title="Star Wars", duration_seconds=7620),

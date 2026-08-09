@@ -70,6 +70,7 @@ class TranscodeService:
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp_dest = dest.with_suffix(".partial" + dest.suffix)
 
+        self._controller.currently_transcoding_movie_id = movie_id
         logger.info("Transcoding %s", source.name)
         process = await asyncio.create_subprocess_exec(
             "ffmpeg", "-y", "-loglevel", "error",
@@ -110,3 +111,4 @@ class TranscodeService:
                 process.kill()
                 await process.wait()
             tmp_dest.unlink(missing_ok=True)
+            self._controller.currently_transcoding_movie_id = None

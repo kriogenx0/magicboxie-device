@@ -17,6 +17,9 @@ LIBRARY_CHARACTERISTIC_UUID = "3e2c1a00-3b42-4b7e-9c3e-000000000004"
 # app can discover it and offer to switch to WiFi for the bulk-data transports
 # (thumbnails, library, status polling) that BLE's tiny ATT payloads can't carry.
 NETWORK_INFO_CHARACTERISTIC_UUID = "3e2c1a00-3b42-4b7e-9c3e-000000000005"
+# Read-only + notify: which movie (if any) TranscodeService is currently
+# re-encoding in the background - see views/transcode_service.py.
+TRANSCODE_STATUS_CHARACTERISTIC_UUID = "3e2c1a00-3b42-4b7e-9c3e-000000000006"
 
 # iOS long-reads cap out at 512 bytes (BLE ATT maximum attribute value length).
 MAX_CHARACTERISTIC_BYTES = 512
@@ -90,6 +93,20 @@ def decode_status(data: bytes) -> PlaybackState:
     position = int.from_bytes(data[3:7], "little")
     movie_id = None if movie_id_raw == _NO_MOVIE_SENTINEL else movie_id_raw
     return PlaybackState(status=status, movie_id=movie_id, position_seconds=position)
+
+
+def encode_transcode_status(movie_id: Optional[int]) -> bytes:
+    """2 bytes little-endian movie id (0xFFFF = nothing currently transcoding) -
+    same sentinel convention as encode_status's movie_id field."""
+    value = _NO_MOVIE_SENTINEL if movie_id is None else movie_id
+    return value.to_bytes(2, "little")
+
+
+def decode_transcode_status(data: bytes) -> Optional[int]:
+    if len(data) < 2:
+        raise ValueError("transcode status payload too short")
+    value = int.from_bytes(data[0:2], "little")
+    return None if value == _NO_MOVIE_SENTINEL else value
 
 
 def encode_library(movies: List[Movie], max_bytes: int = MAX_CHARACTERISTIC_BYTES) -> bytes:

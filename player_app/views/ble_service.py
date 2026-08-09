@@ -27,6 +27,7 @@ class MagicBoxieService(Service):
         self._controller = controller
         self._status_bytes = protocol.encode_status(PlaybackState.idle())
         self._network_url_bytes = network_url.encode("utf-8")
+        self._transcode_status_bytes = protocol.encode_transcode_status(None)
         self._poll_task: Optional[asyncio.Task] = None
 
     def start_status_polling(self) -> None:
@@ -40,6 +41,7 @@ class MagicBoxieService(Service):
         while True:
             await asyncio.sleep(STATUS_POLL_INTERVAL_SECONDS)
             await self._refresh_status()
+            self._refresh_transcode_status()
 
     async def _refresh_status(self) -> None:
         state = await self._controller.refresh_status()
@@ -47,6 +49,15 @@ class MagicBoxieService(Service):
         if new_bytes != self._status_bytes:
             self._status_bytes = new_bytes
             self.status.changed(new_bytes)
+
+    def _refresh_transcode_status(self) -> None:
+        # No mpv IPC round-trip needed here (unlike _refresh_status) - just
+        # reading the flag TranscodeService sets/clears directly on the
+        # controller - so this doesn't need to be async.
+        new_bytes = protocol.encode_transcode_status(self._controller.currently_transcoding_movie_id)
+        if new_bytes != self._transcode_status_bytes:
+            self._transcode_status_bytes = new_bytes
+            self.transcode_status.changed(new_bytes)
 
     async def _handle_and_refresh(self, cmd: protocol.Command) -> None:
         await self._controller.handle_command(cmd)
@@ -94,3 +105,7 @@ class MagicBoxieService(Service):
     @characteristic(protocol.NETWORK_INFO_CHARACTERISTIC_UUID, CharFlags.READ)
     def network_info(self, options):
         return self._network_url_bytes[options.offset :]
+
+    @characteristic(protocol.TRANSCODE_STATUS_CHARACTERISTIC_UUID, CharFlags.READ | CharFlags.NOTIFY)
+    def transcode_status(self, options):
+        return self._transcode_status_bytes[options.offset :]

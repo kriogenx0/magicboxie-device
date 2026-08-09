@@ -89,6 +89,31 @@ def test_successful_transcode_moves_partial_file_into_place(tmp_path):
     assert not (dest.parent / "0.partial.mp4").exists()
 
 
+def test_currently_transcoding_movie_id_set_during_and_cleared_after(tmp_path):
+    """controller.currently_transcoding_movie_id is what ble_service.py's
+    status poll reads to notify the app - must be accurate both while a
+    transcode is in flight and once it's done, regardless of outcome."""
+    async def scenario():
+        library = FakeLibrary(transcode_dir=tmp_path)
+        controller = PlaybackController(library, FakeMpv())
+        service = TranscodeService(controller)
+        seen_during: list = []
+
+        async def fake_exec(*args, **kwargs):
+            seen_during.append(controller.currently_transcoding_movie_id)
+            (tmp_path / "0.partial.mp4").write_bytes(b"encoded")
+            return FakeProcess(returncode=0)
+
+        with patch(_PATCH_TARGET, side_effect=fake_exec):
+            await service._transcode(movie_id=0)
+
+        return seen_during, controller.currently_transcoding_movie_id
+
+    seen_during, after = asyncio.run(scenario())
+    assert seen_during == [0]
+    assert after is None
+
+
 def test_failed_transcode_leaves_no_partial_file_behind(tmp_path):
     async def scenario():
         library = FakeLibrary(transcode_dir=tmp_path)
