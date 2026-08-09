@@ -110,9 +110,16 @@ class MpvController:
         self._writer.write(payload.encode("utf-8"))
         await self._writer.drain()
         try:
-            return await asyncio.wait_for(future, timeout=5)
+            response = await asyncio.wait_for(future, timeout=5)
         finally:
             self._pending.pop(request_id, None)
+        # mpv reports command failures (bad syntax, wrong arg types, etc.) in
+        # this same success-path response rather than as a socket-level
+        # error, so nothing here would otherwise surface one - a bad
+        # loadfile call once silently did nothing for exactly this reason.
+        if response.get("error") != "success":
+            logger.warning("mpv command %r failed: %s", args, response.get("error"))
+        return response
 
     async def load(self, path: Path) -> None:
         # pause=no is passed as part of loadfile's own options rather than as
@@ -124,7 +131,14 @@ class MpvController:
         # that finished, and got silently reset to paused once mpv's own
         # load transition completed. Setting it as a loadfile option applies
         # atomically as part of the same load, so there's no race to lose.
-        await self._command("loadfile", str(path), "replace", "pause=no")
+        #
+        # mpv's loadfile signature is <url> [<flags> [<index> [<options>]]] -
+        # options is the 4th positional, not the 3rd; passing it 3rd (as an
+        # earlier version of this fix did) makes mpv try to parse it as the
+        # integer <index> and reject the whole command with "invalid
+        # parameter", silently. index is irrelevant for "replace" but must
+        # still be passed positionally to reach options.
+        await self._command("loadfile", str(path), "replace", 0, "pause=no")
 
     async def show_image(self, path: Path) -> None:
         """Like load(), but for a still image meant to sit on screen
