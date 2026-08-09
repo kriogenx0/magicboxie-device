@@ -56,6 +56,11 @@ def _movie_payload(controller: PlaybackController, movie: Movie) -> dict:
         "duration_seconds": movie.duration_seconds,
         "description": None,
         "year": None,
+        # Whether TranscodeService still needs to (re-)encode this movie -
+        # lets the app show a "not yet optimized for this device" badge
+        # distinct from the transcode_status characteristic's "actively
+        # transcoding right now" signal.
+        "needs_transcoding": not controller.library.transcode_path_for(movie.id).exists(),
     }
     payload.update(controller.library.metadata_for(movie.id))
     return payload

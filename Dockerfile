@@ -27,7 +27,7 @@ ENTRYPOINT ["magicboxie-device"]
 # `make test` / `docker build --target test`: runs the suite inside the same
 # environment the app ships in, so `make` never depends on a local Python.
 FROM base AS test
-RUN pip install --no-cache-dir pytest
+RUN pip install --no-cache-dir .[dev]
 COPY tests ./tests
 ENTRYPOINT []
 CMD ["python", "-m", "pytest", "-v"]
