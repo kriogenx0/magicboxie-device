@@ -115,7 +115,16 @@ class MpvController:
             self._pending.pop(request_id, None)
 
     async def load(self, path: Path) -> None:
-        await self._command("loadfile", str(path), "replace")
+        # pause=no is passed as part of loadfile's own options rather than as
+        # a separate play() call afterward: loadfile acknowledges near-
+        # instantly, but actually opening/probing the file happens
+        # asynchronously and can take real time for a large file on this
+        # hardware (same reason PROBE_TIMEOUT_SECONDS in library.py had to
+        # grow) - a separate pause=no sent right after often landed before
+        # that finished, and got silently reset to paused once mpv's own
+        # load transition completed. Setting it as a loadfile option applies
+        # atomically as part of the same load, so there's no race to lose.
+        await self._command("loadfile", str(path), "replace", "pause=no")
 
     async def show_image(self, path: Path) -> None:
         """Like load(), but for a still image meant to sit on screen
