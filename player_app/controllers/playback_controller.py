@@ -2,6 +2,7 @@
 independent of whether commands arrive over BLE or plain HTTP."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import List, Optional
 
@@ -43,6 +44,20 @@ class PlaybackController:
             await self.stop_and_show_idle_screen()
         elif cmd.opcode == Opcode.SEEK and cmd.argument is not None:
             await self.player.seek(cmd.argument)
+        elif cmd.opcode == Opcode.SHUTDOWN:
+            await self._shutdown()
+
+    @staticmethod
+    async def _shutdown() -> None:
+        """Powers off the whole device. Not really "playback control", but
+        routed through the same command channel as everything else since
+        there's no separate system-command pathway and this is the only
+        such action that exists. Needs sudo since the service itself runs
+        unprivileged (see deploy/magicboxie-device.service.in) - relies on
+        the Pi's default passwordless sudo for the setup user rather than
+        provisioning a narrower rule, since that's already how this
+        specific device is configured."""
+        await asyncio.create_subprocess_exec("sudo", "systemctl", "poweroff")
 
     async def show_idle_screen(self) -> None:
         """Displays the thumbnail-grid home screen - the device's resting

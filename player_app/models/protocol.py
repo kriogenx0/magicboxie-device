@@ -30,6 +30,7 @@ class Opcode(IntEnum):
     STOP = 0x03
     SELECT_MOVIE = 0x04
     SEEK = 0x05
+    SHUTDOWN = 0x06
 
 
 class PlaybackStatus(IntEnum):

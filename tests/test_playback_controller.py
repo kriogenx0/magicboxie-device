@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import AsyncMock, patch
 
 from fakes import FakeLibrary, FakeMpv
 
@@ -75,3 +76,19 @@ def test_seek_updates_position():
 
     state = asyncio.run(scenario())
     assert state.position_seconds == 42
+
+
+def test_shutdown_invokes_systemctl_poweroff_via_sudo():
+    # Patched out so this test never actually powers off the machine
+    # running it.
+    async def scenario():
+        controller = PlaybackController(FakeLibrary(), FakeMpv())
+        with patch(
+            "player_app.controllers.playback_controller.asyncio.create_subprocess_exec",
+            new=AsyncMock(),
+        ) as mock_exec:
+            await controller.handle_command(Command(opcode=Opcode.SHUTDOWN))
+            return mock_exec
+
+    mock_exec = asyncio.run(scenario())
+    mock_exec.assert_awaited_once_with("sudo", "systemctl", "poweroff")
