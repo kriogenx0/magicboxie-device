@@ -49,6 +49,11 @@ ADVERT_REFRESH_SECONDS = 150
 # having registered its adapter over D-Bus yet at boot).
 BLE_RETRY_SECONDS = 5
 
+# How long to wait before retrying mDNS registration after it fails (e.g. a
+# stale record from a previous instance still cached on the network under
+# the same name - see _run_mdns).
+MDNS_RETRY_SECONDS = 5
+
 # The home server (MagicBoxie-web) this device checks in with for new content
 # when it has internet - see views/home_sync_service.py. Unset by default:
 # the device works standalone (BLE/HTTP + whatever's already on disk), this
@@ -139,15 +144,29 @@ async def _run_http(controller: PlaybackController, stop_event: asyncio.Event) -
 
 async def _run_mdns(stop_event: asyncio.Event) -> None:
     """Advertises the HTTP API over mDNS/Bonjour so the app can find this
-    device on the local WiFi network without needing a BLE connection first."""
+    device on the local WiFi network without needing a BLE connection first.
+
+    Retries on any failure (e.g. zeroconf.NonUniqueNameException, which a
+    fast restart loop can trigger if a previous instance's record hasn't
+    expired from the network's cache yet) rather than letting it propagate
+    up to the `asyncio.gather` in `_run()` and take down BLE/HTTP with it -
+    mirrors _run_ble's identical rationale for the same asyncio.gather.
+    """
     from .views.mdns_service import MdnsAdvertiser
 
-    advertiser = MdnsAdvertiser(DEVICE_NAME, _local_ip(), HTTP_PORT)
-    await advertiser.start()
-    try:
-        await stop_event.wait()
-    finally:
-        await advertiser.stop()
+    while not stop_event.is_set():
+        advertiser = MdnsAdvertiser(DEVICE_NAME, _local_ip(), HTTP_PORT)
+        try:
+            await advertiser.start()
+        except Exception:
+            logger.exception("mDNS advertising failed - retrying in %ds", MDNS_RETRY_SECONDS)
+            await sleep_unless_stopped(stop_event, MDNS_RETRY_SECONDS)
+            continue
+
+        try:
+            await stop_event.wait()
+        finally:
+            await advertiser.stop()
 
 
 async def _run_library_scan(controller: PlaybackController, stop_event: asyncio.Event) -> None:
