@@ -134,6 +134,29 @@ def test_failed_transcode_leaves_no_partial_file_behind(tmp_path):
     assert not (transcode_dir / "0.partial.mp4").exists()
 
 
+def test_next_movie_needing_transcode_skips_one_that_already_failed(tmp_path):
+    """A movie ffmpeg can't encode (corrupt file, unsupported codec
+    quirk, ...) must not get retried every single loop iteration forever -
+    see TranscodeService._failed_movie_ids."""
+    async def scenario():
+        library = FakeLibrary(transcode_dir=tmp_path)
+        controller = PlaybackController(library, FakeMpv())
+        service = TranscodeService(controller)
+
+        async def fake_exec(*args, **kwargs):
+            return FakeProcess(returncode=1, stderr=b"moov atom not found")
+
+        with patch(_PATCH_TARGET, side_effect=fake_exec):
+            await service._transcode(movie_id=0)
+
+        return service
+
+    service = asyncio.run(scenario())
+    next_movie = service._next_movie_needing_transcode()
+    assert next_movie is not None
+    assert next_movie.id == 1
+
+
 def test_transcode_stops_and_cleans_up_once_playback_starts(tmp_path):
     """The core guarantee this whole feature exists for: transcoding must
     never keep competing with playback decode on this device's one core."""

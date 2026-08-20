@@ -41,6 +41,14 @@ IDLE_POLL_INTERVAL_SECONDS = 5.0
 class TranscodeService:
     def __init__(self, controller: PlaybackController):
         self._controller = controller
+        # A movie ffmpeg can't encode (corrupt/incomplete download, a codec
+        # quirk it rejects, etc.) would otherwise get retried every loop
+        # iteration forever - _next_movie_needing_transcode has no other way
+        # to tell "no transcoded file yet because it hasn't been tried" apart
+        # from "no transcoded file yet because every attempt has failed".
+        # Cleared on restart, so a fixed/re-downloaded file does get another
+        # chance eventually.
+        self._failed_movie_ids: set = set()
 
     async def run(self, stop_event: asyncio.Event) -> None:
         while not stop_event.is_set():
@@ -56,9 +64,12 @@ class TranscodeService:
                 # or wedge every other movie behind it forever - log and
                 # move on; the outer loop just tries the next one.
                 logger.exception("Transcoding movie %d failed unexpectedly", movie.id)
+                self._failed_movie_ids.add(movie.id)
 
     def _next_movie_needing_transcode(self) -> Optional[Movie]:
         for movie in self._controller.movies:
+            if movie.id in self._failed_movie_ids:
+                continue
             if not self._controller.library.transcode_path_for(movie.id).exists():
                 return movie
         return None
@@ -102,6 +113,7 @@ class TranscodeService:
                 "Transcoding %s failed (exit %d): %s",
                 source.name, process.returncode, stderr.decode(errors="replace"),
             )
+            self._failed_movie_ids.add(movie_id)
         finally:
             # Covers every exit path uniformly: interrupted by playback,
             # ffmpeg failed, or something above raised unexpectedly. Never
