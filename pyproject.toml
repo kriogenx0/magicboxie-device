@@ -15,6 +15,12 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "aioresponses>=0.7",
+    # aioresponses 0.7.9 (its latest release) monkey-patches
+    # aiohttp.ClientResponse in a way that broke against aiohttp 3.14's
+    # now-required-keyword-only stream_writer param - confirmed 3.13.2
+    # still works, 3.14.3 doesn't. Only constrains the dev/test install
+    # ([dev] extra) - the app itself still takes any aiohttp>=3.9.
+    "aiohttp<3.14",
 ]
 
 [project.scripts]
