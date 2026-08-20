@@ -3,6 +3,9 @@ MOVIES_DIR := movies
 VENV := .venv
 THUMBNAIL_DIR := /var/lib/magicboxie/thumbnails
 TRANSCODE_DIR := /var/lib/magicboxie/transcoded
+# MagicBoxie-web's LAN hostname - see player_app/views/home_sync_service.py.
+# Override (e.g. to empty) for a device with no home server to sync with.
+HOME_SERVER_URL := http://magicboxie.local
 # Fixed absolute path on the Pi where content lives - independent of wherever
 # this repo happens to be checked out, unlike MOVIES_DIR above (which is
 # Docker-dev-only, relative to the repo, and unrelated to the real device).
@@ -146,6 +149,7 @@ pi-service: pi-setup
 		-e 's|@MOVIES_DIR@|$(CONTENT_DIR)|g' \
 		-e 's|@THUMBNAIL_DIR@|$(THUMBNAIL_DIR)|g' \
 		-e 's|@TRANSCODE_DIR@|$(TRANSCODE_DIR)|g' \
+		-e 's|@HOME_SERVER_URL@|$(HOME_SERVER_URL)|g' \
 		deploy/magicboxie-device.service.in | sudo tee $(SERVICE_FILE) >/dev/null
 	sudo systemctl daemon-reload
 	sudo systemctl enable $(SERVICE_NAME)

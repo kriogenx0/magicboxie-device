@@ -60,7 +60,10 @@ MDNS_RETRY_SECONDS = 5
 # is opportunistic on top of that, not a requirement.
 HOME_SERVER_URL = os.environ.get("MAGICBOXIE_HOME_SERVER_URL", "")
 HOME_SERVER_PASSWORD = os.environ.get("MAGICBOXIE_HOME_SERVER_PASSWORD", "")
-HOME_SERVER_CHECKIN_SECONDS = int(os.environ.get("MAGICBOXIE_HOME_SERVER_CHECKIN_SECONDS", "600"))
+# A minute, not longer: the device is meant to pick up newly-synced-enabled
+# movies promptly whenever it happens to be on the home WiFi, and a failed
+# check-in (server unreachable) is cheap and expected - see HomeServerSync.
+HOME_SERVER_CHECKIN_SECONDS = int(os.environ.get("MAGICBOXIE_HOME_SERVER_CHECKIN_SECONDS", "60"))
 
 
 def _mpv_output_args() -> List[str]:
