@@ -1,3 +1,5 @@
+import zlib
+
 from player_app.models.library import MovieLibrary
 
 
@@ -73,3 +75,41 @@ def test_movie_id_is_stable_across_rescans_when_files_are_added(tmp_path):
 
     rescanned = next(m for m in library.movies if m.title == "z_movie")
     assert rescanned.id == original_id
+
+
+def test_movie_id_survives_a_collision_being_freed_up_by_another_file_going_away(tmp_path, monkeypatch):
+    """The bug this guards against: computing a fresh hash every scan is
+    only actually stable in the no-collision case. Once two files collide,
+    whichever one the scan reaches first (alphabetically) claims the
+    natural slot and the other gets bumped to +1 - and if the first file is
+    later removed, recomputing from scratch would let the survivor's
+    natural-slot computation succeed outright, silently changing its id
+    even though the survivor itself was never touched or renamed. Movie ids
+    must be assigned once and persisted (see MovieLibrary._id_by_filename),
+    not just recomputed the same way every time."""
+    import player_app.models.library as library_module
+
+    real_crc32 = zlib.crc32
+
+    def colliding_crc32(data: bytes) -> int:
+        if data in (b"first.mp4", b"second.mp4"):
+            return 100
+        return real_crc32(data)
+
+    monkeypatch.setattr(library_module.zlib, "crc32", colliding_crc32)
+
+    movies_dir = tmp_path / "movies"
+    movies_dir.mkdir()
+    (movies_dir / "first.mp4").write_bytes(b"fake-video-bytes")
+    (movies_dir / "second.mp4").write_bytes(b"fake-video-bytes")
+    library = MovieLibrary(movies_dir, thumbnail_dir=tmp_path / "thumbnails")
+    library.scan()
+
+    second_id_before = next(m for m in library.movies if m.title == "second").id
+    assert second_id_before == 101  # bumped past "first"'s natural slot (100)
+
+    (movies_dir / "first.mp4").unlink()
+    library.scan()
+
+    second_id_after = next(m for m in library.movies if m.title == "second").id
+    assert second_id_after == second_id_before

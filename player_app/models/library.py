@@ -50,12 +50,25 @@ class MovieLibrary:
         self._metadata: Dict[int, dict] = {}
         self._thumbnail_dir = thumbnail_dir
         self._transcode_dir = transcode_dir
+        self._id_map_path = thumbnail_dir / "movie_ids.json"
+        # filename -> id, persisted across restarts (see _stable_id's own
+        # docstring for why: computing a fresh hash every scan is only
+        # actually stable id-to-filename in the no-collision case - once a
+        # collision happens, which of the colliding files gets bumped to
+        # hash+1 depends on which one this scan happens to reach first, and
+        # that can change if the file *set* changes (one added, one
+        # removed) even though the specific file in question was never
+        # touched. Recording the assignment the first time a filename is
+        # ever seen and always reusing it after makes an id permanent for
+        # that filename, full stop - not just usually stable.
+        self._id_by_filename: Dict[str, int] = {}
 
     def scan(self) -> List[Movie]:
         """Reads the movies directory from the filesystem and caches the
         result (title, duration, thumbnail, metadata) in memory for fast
         lookups."""
         self._thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        self._id_by_filename = self._load_id_map()
 
         files = sorted(
             p for p in self.root.iterdir()
@@ -66,8 +79,15 @@ class MovieLibrary:
         paths = {}
         thumbnail_paths = {}
         metadata = {}
+        taken_ids = set(self._id_by_filename.values())
         for path in files:
-            movie_id = self._stable_id(path, taken=paths)
+            if path.name in self._id_by_filename:
+                movie_id = self._id_by_filename[path.name]
+            else:
+                movie_id = self._stable_id(path, taken=taken_ids)
+                self._id_by_filename[path.name] = movie_id
+                taken_ids.add(movie_id)
+
             movies.append(
                 Movie(id=movie_id, title=path.stem, duration_seconds=self._probe_duration(path))
             )
@@ -83,8 +103,24 @@ class MovieLibrary:
         self._paths = paths
         self._thumbnail_paths = thumbnail_paths
         self._metadata = metadata
+        self._save_id_map()
         logger.info("Scanned %d movie(s) in %s", len(movies), self.root)
         return movies
+
+    def _load_id_map(self) -> Dict[str, int]:
+        if not self._id_map_path.is_file():
+            return {}
+        try:
+            return json.loads(self._id_map_path.read_text())
+        except (OSError, ValueError):
+            logger.warning("Failed to read %s - starting a fresh movie id map", self._id_map_path)
+            return {}
+
+    def _save_id_map(self) -> None:
+        try:
+            self._id_map_path.write_text(json.dumps(self._id_by_filename))
+        except OSError:
+            logger.warning("Failed to persist %s - ids may not survive a restart", self._id_map_path)
 
     @property
     def movies(self) -> List[Movie]:
@@ -135,22 +171,21 @@ class MovieLibrary:
         return updated
 
     @staticmethod
-    def _stable_id(path: Path, taken: Dict[int, Path]) -> int:
-        """A movie's id must stay the same across rescans regardless of what
-        other files exist - it's used both over the wire (a client that
-        selects/reports on an id from one scan needs it to still mean the
-        same movie after the next) and to key persisted thumbnail/metadata
-        files on disk. The previous scheme (a plain enumerate() index over
-        the sorted file list) shifted for every movie whenever a file was
-        added or removed anywhere earlier in sort order, silently
-        reattaching one movie's thumbnail/metadata/selection to whatever
-        movie now landed on its old id. Deriving the id from the filename
-        alone fixes that: it only changes if the file itself is renamed.
+    def _stable_id(path: Path, taken: set) -> int:
+        """Computes an id for a filename the persisted map (see
+        _id_by_filename) has never seen before - only ever called once per
+        filename, the first time it's encountered, since scan() reuses the
+        persisted id on every scan after that. The previous scheme (a plain
+        enumerate() index over the sorted file list) shifted for every movie
+        whenever a file was added or removed anywhere earlier in sort order,
+        silently reattaching one movie's thumbnail/metadata/selection to
+        whatever movie now landed on its old id.
 
-        taken is the id->path mapping built so far this scan, used to probe
-        past a hash collision (rare for a personal-library-sized directory,
-        but cheap to handle) rather than letting two files silently share
-        an id.
+        taken is every id already assigned to some other filename (from the
+        persisted map, plus anything assigned earlier in this same scan),
+        used to probe past a hash collision (rare for a personal-library-
+        sized directory, but cheap to handle) rather than letting two files
+        share an id.
         """
         movie_id = zlib.crc32(path.name.encode("utf-8")) % _MOVIE_ID_SPACE
         while movie_id in taken:
