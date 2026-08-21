@@ -55,9 +55,24 @@ class HomeServerSync:
                 logger.info("Home server check-in: nothing new")
                 return
 
+            # /devices/register (the common path above) lists movies without
+            # authenticating, but the video bytes themselves are served from
+            # an authenticated route - unlike the metadata-only registration
+            # listing, anonymous access to stream arbitrary video would be a
+            # real information-disclosure concern. A token is needed here
+            # regardless of which path found the movies to download.
+            token = await self._authenticate(session)
+            if token is None:
+                logger.info(
+                    "Home server check-in: found %d new movie(s) but couldn't authenticate to download them",
+                    len(to_download),
+                )
+                return
+            headers = {"Authorization": f"Bearer {token}"}
+
             logger.info("Home server check-in: downloading %d new movie(s)", len(to_download))
             downloaded = [
-                movie for movie in to_download if await self._download_movie(session, movie)
+                movie for movie in to_download if await self._download_movie(session, movie, headers)
             ]
             if not downloaded:
                 return
@@ -115,7 +130,7 @@ class HomeServerSync:
         items = data.get("Items", [])
         return [item for item in items if item.get("MagicBoxieStatus") == _READY_STATUS]
 
-    async def _download_movie(self, session: aiohttp.ClientSession, movie: dict) -> bool:
+    async def _download_movie(self, session: aiohttp.ClientSession, movie: dict, headers: dict) -> bool:
         dest_path = self._library.root / self._local_filename(movie)
         if dest_path.exists():
             return False
@@ -125,6 +140,7 @@ class HomeServerSync:
             async with session.get(
                 f"{self._base_url}/Videos/{movie['Id']}/stream",
                 params={"static": "true"},
+                headers=headers,
                 timeout=aiohttp.ClientTimeout(total=None),
             ) as resp:
                 if resp.status != 200:
