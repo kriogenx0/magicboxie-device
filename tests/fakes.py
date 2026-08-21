@@ -89,6 +89,9 @@ class FakeLibrary:
     def thumbnail_path_for(self, movie_id):
         return self._thumbnail_paths.get(movie_id)
 
+    def delete(self, movie_id):
+        self._paths.pop(movie_id, None)
+
     def save_uploaded_thumbnail(self, movie_id, data):
         if self._thumbnail_dir is None:
             raise RuntimeError("FakeLibrary needs thumbnail_dir to save uploads")

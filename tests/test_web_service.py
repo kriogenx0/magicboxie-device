@@ -377,3 +377,67 @@ def test_post_movie_empty_body_returns_400(tmp_path):
 
     assert asyncio.run(scenario()) == 400
     assert not (tmp_path / "movies" / "Empty.mp4").exists()
+
+
+def test_delete_movie_removes_it_from_disk_and_the_list(tmp_path):
+    library = _real_library(tmp_path)
+    (tmp_path / "movies" / "Doomed.mp4").write_bytes(b"fake-video-bytes")
+    library.scan()
+    movie_id = next(m.id for m in library.movies if m.title == "Doomed")
+
+    async def scenario():
+        client, _ = await _make_client(library)
+        try:
+            resp = await client.delete(f"/api/movies/{movie_id}")
+            assert resp.status == 200
+            resp = await client.get("/api/movies")
+            return await resp.json()
+        finally:
+            await client.close()
+
+    movies = asyncio.run(scenario())
+    assert not any(m["title"] == "Doomed" for m in movies)
+    assert not (tmp_path / "movies" / "Doomed.mp4").exists()
+
+
+def test_delete_movie_unknown_id_returns_404():
+    async def scenario():
+        client, _ = await _make_client()
+        try:
+            resp = await client.delete("/api/movies/99999")
+            return resp.status
+        finally:
+            await client.close()
+
+    assert asyncio.run(scenario()) == 404
+
+
+def test_delete_movie_invalid_id_returns_400():
+    async def scenario():
+        client, _ = await _make_client()
+        try:
+            resp = await client.delete("/api/movies/not-a-number")
+            return resp.status
+        finally:
+            await client.close()
+
+    assert asyncio.run(scenario()) == 400
+
+
+def test_delete_movie_stops_playback_first_if_currently_selected():
+    async def scenario():
+        client, controller = await _make_client()
+        try:
+            await client.post("/api/command", json={"opcode": "select_movie", "argument": 0})
+            resp = await client.delete("/api/movies/0")
+            assert resp.status == 200
+            return controller
+        finally:
+            await client.close()
+
+    controller = asyncio.run(scenario())
+    # Mirrors test_stop_shows_idle_screen's own assertion: confirms
+    # stop_and_show_idle_screen ran (rather than the file being deleted out
+    # from under active playback) without depending on FakeMpv.idle, which
+    # goes back to False once the idle-screen image itself gets "loaded".
+    assert controller.player.shown_image_path is not None

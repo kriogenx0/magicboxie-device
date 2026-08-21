@@ -36,6 +36,7 @@ def create_app(controller: PlaybackController) -> web.Application:
 
     app.router.add_get("/api/movies", _get_movies)
     app.router.add_post("/api/movies", _post_movie)
+    app.router.add_delete("/api/movies/{id}", _delete_movie)
     app.router.add_post("/api/rescan", _post_rescan)
     app.router.add_get("/api/movies/{id}/thumbnail", _get_thumbnail)
     app.router.add_post("/api/movies/{id}/thumbnail", _post_thumbnail)
@@ -83,6 +84,27 @@ async def _post_rescan(request: web.Request) -> web.Response:
     controller = request.app[_CONTROLLER_KEY]
     controller.library.scan()
     return web.json_response(_movies_payload(controller))
+
+
+async def _delete_movie(request: web.Request) -> web.Response:
+    """Permanently removes a movie from the device (see
+    MovieLibrary.delete) - stops playback first if it's the one currently
+    selected, so its file isn't yanked out from under mpv mid-playback."""
+    controller = request.app[_CONTROLLER_KEY]
+    try:
+        movie_id = int(request.match_info["id"])
+    except ValueError:
+        return web.json_response({"error": "invalid movie id"}, status=400)
+
+    if not any(movie.id == movie_id for movie in controller.movies):
+        return web.json_response({"error": "unknown movie id"}, status=404)
+
+    state = await controller.refresh_status()
+    if state.movie_id == movie_id:
+        await controller.stop_and_show_idle_screen()
+
+    controller.library.delete(movie_id)
+    return web.json_response({"ok": True})
 
 
 async def _post_movie(request: web.Request) -> web.Response:

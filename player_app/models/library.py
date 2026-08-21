@@ -158,6 +158,29 @@ class MovieLibrary:
     def metadata_for(self, movie_id: int) -> dict:
         return self._metadata.get(movie_id, {})
 
+    def delete(self, movie_id: int) -> None:
+        """Permanently removes a movie: its source file, any transcoded
+        copy, thumbnail, and metadata, then rescans so in-memory state (and
+        the persisted id map) reflects the removal immediately rather than
+        waiting for whatever triggers the next scan. Raises KeyError for an
+        unknown id - callers (see web_service._delete_movie) check
+        existence themselves first for a clean 404 instead."""
+        path = self._paths[movie_id]
+
+        path.unlink(missing_ok=True)
+        self.transcode_path_for(movie_id).unlink(missing_ok=True)
+        thumbnail = self._thumbnail_paths.get(movie_id)
+        if thumbnail is not None:
+            thumbnail.unlink(missing_ok=True)
+        (self._thumbnail_dir / f"{movie_id}.json").unlink(missing_ok=True)
+        # scan() reloads _id_by_filename from disk as its first step, so the
+        # removal has to be saved before calling it or scan() would just
+        # read the stale (pre-removal) map straight back in.
+        self._id_by_filename.pop(path.name, None)
+        self._save_id_map()
+
+        self.scan()
+
     def save_metadata(self, movie_id: int, **fields) -> dict:
         """Merges phone-supplied metadata (e.g. title/description/year fetched
         online) into what's cached for this movie and persists it to disk
